@@ -363,12 +363,13 @@ async def vast_tag(
     # Sanitise IP: if it looks like an unresolved macro, use real client IP
     raw_ip = (ip or "").strip()
     if not raw_ip or "{" in raw_ip or "[" in raw_ip or "%7B" in raw_ip.upper():
-        # Behind nginx/proxy: prefer X-Forwarded-For → X-Real-IP → client.host
-        _xff = request.headers.get("x-forwarded-for", "")
+        # Behind nginx/proxy: prefer X-Real-IP (set by nginx from $remote_addr,
+        # not spoofable) over X-Forwarded-For (first entry can be forged by clients).
         _xri = request.headers.get("x-real-ip", "")
+        _xff = request.headers.get("x-forwarded-for", "")
         raw_ip = (
-            _xff.split(",")[0].strip() if _xff
-            else _xri.strip() if _xri
+            _xri.strip() if _xri
+            else _xff.split(",")[-1].strip() if _xff
             else (request.client.host if request.client else "")
         )
 
