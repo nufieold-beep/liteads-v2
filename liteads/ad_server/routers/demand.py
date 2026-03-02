@@ -49,7 +49,7 @@ Endpoints:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -58,7 +58,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from liteads.common.cache import CacheKeys, redis_client
 from liteads.common.database import get_session
 from liteads.common.logger import get_logger
 from liteads.models import (

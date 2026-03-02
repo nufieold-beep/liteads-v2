@@ -19,7 +19,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 from liteads.common.logger import get_logger
 from liteads.schemas.internal import AdCandidate

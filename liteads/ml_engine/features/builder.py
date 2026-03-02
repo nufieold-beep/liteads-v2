@@ -18,7 +18,7 @@ from liteads.ml_engine.features.config import (
     FeaturesConfigLoader,
     FeaturesConfigSchema,
 )
-from liteads.ml_engine.features.processor import FeaturePipeline, FeatureProcessorFactory
+from liteads.ml_engine.features.processor import FeaturePipeline
 
 logger = get_logger(__name__)
 

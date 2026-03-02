@@ -7,7 +7,7 @@ Optimized for video ad fill rate rather than CTR/CVR.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from liteads.common.logger import get_logger
 from liteads.common.utils import Timer
 from liteads.rec_engine.filter.base import BaseFilter, CompositeFilter
 from liteads.rec_engine.filter.budget import BudgetFilter
-from liteads.rec_engine.filter.quality import DiversityFilter, QualityFilter
+from liteads.rec_engine.filter.quality import QualityFilter
 from liteads.rec_engine.ranking.bidding import Bidding, RankingStrategy
 from liteads.rec_engine.ranking.predictor import (
     BasePredictor,

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 import time
 from collections import defaultdict
@@ -469,9 +470,8 @@ class DemandForwarder:
         )
 
         # ── Debug: log full ORTB payload (truncated to avoid log bloat) ──
-        import json as _json
         try:
-            _payload_str = _json.dumps(bid_payload, separators=(",", ":"))
+            _payload_str = json.dumps(bid_payload, separators=(",", ":"))
             logger.debug(
                 "ORTB payload",
                 request_id=request_id,

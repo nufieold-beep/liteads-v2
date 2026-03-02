@@ -7,7 +7,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from liteads.common.cache import CacheKeys, redis_client
+from liteads.common.cache import redis_client
 from liteads.common.logger import get_logger
 from liteads.common.utils import current_date
 from liteads.rec_engine.filter.base import BaseFilter
