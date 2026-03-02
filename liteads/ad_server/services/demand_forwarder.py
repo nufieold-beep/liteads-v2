@@ -60,7 +60,7 @@ from liteads.schemas.openrtb import (
     Video as OrtbVideo,
 )
 from liteads.schemas.request import AdRequest
-from liteads.common.geoip import lookup as geoip_lookup
+from liteads.common.geoip import lookup as geoip_lookup, _to_alpha3
 from liteads.common.ortb_enricher import enrich_bid_request as _enrich_ortb
 
 logger = get_logger(__name__)
@@ -929,15 +929,15 @@ class DemandForwarder:
             if ad_request.geo and ad_request.geo.country:
                 g = ad_request.geo
                 geo = OrtbGeo(
-                    country=g.country,
+                    country=_to_alpha3(g.country),
                     region=g.region,
                     city=g.city,
                     metro=g.dma,
                     lat=g.latitude,
                     lon=g.longitude,
                     zip=g.zip_code,
-                    type=g.geo_type or (2 if g.latitude else None),  # 2=IP-based
-                    ipservice=g.ipservice,
+                    type=g.geo_type or 2,  # 2=IP-based
+                    ipservice=g.ipservice or 3,  # 3=MaxMind (default)
                 )
 
             # Fallback: auto-enrich geo from MaxMind GeoIP using device IP

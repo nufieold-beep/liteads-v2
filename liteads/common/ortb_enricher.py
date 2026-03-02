@@ -113,8 +113,8 @@ def enrich_bid_request(
         if _set_default(imp, "tagid", tag):
             enriched_fields.append("imp.tagid")
 
-        if imp.bidfloor is None or imp.bidfloor == 0.0:
-            imp.bidfloor = 5.0
+        if imp.bidfloor is None:
+            imp.bidfloor = 0.01  # minimal floor — let DSP decide
             enriched_fields.append("imp.bidfloor")
 
         # -- Video --
