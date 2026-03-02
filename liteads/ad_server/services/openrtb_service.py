@@ -380,11 +380,13 @@ class OpenRTBService:
 
             vast_version = self._settings.vast.supported_versions[-1]
 
-            # Choose InLine vs Wrapper based on creative type:
-            # - If the creative has a vast_url, generate a Wrapper that
-            #   redirects the player to the external VAST tag while
-            #   injecting our own tracking pixels.
-            # - Otherwise, generate a full InLine with the video media.
+            # Choose InLine vs Wrapper based on creative type.
+            #
+            # CTV double-impression prevention:
+            # - Wrappers must NOT carry our <Impression> because the
+            #   downstream VAST already has its own; two would double-fire.
+            # - InLine is only emitted when the candidate has a real
+            #   video_url (i.e. a <MediaFile> will exist in the VAST).
             if candidate.vast_url:
                 # Wrapper – external VAST tag (e.g. demand/DSP response)
                 click_tracking_url = (
@@ -397,14 +399,14 @@ class OpenRTBService:
                     creative_id=str(candidate.creative_id),
                     vast_tag_uri=candidate.vast_url,
                     ad_title=candidate.title or "Video Ad",
-                    impression_urls=[impression_url],
+                    impression_urls=[],          # no impression — avoid double-fire
                     error_urls=[error_url],
                     tracking_events=tracking_events,
                     click_tracking=[click_tracking_url],
                     price=round(candidate.bid, 4),
                 )
-            else:
-                # InLine – direct video creative
+            elif candidate.video_url:
+                # InLine – direct video creative (MediaFile present)
                 vast_xml = build_vast_xml(
                     version=vast_version,
                     ad_id=ad_id,
@@ -424,6 +426,14 @@ class OpenRTBService:
                     companion_image_url=candidate.companion_image_url,
                     price=round(candidate.bid, 4),
                 )
+            else:
+                # No media file — skip this candidate to avoid phantom impressions
+                logger.warning(
+                    "Skipping candidate with no video_url or vast_url",
+                    request_id=request_id,
+                    ad_id=ad_id,
+                )
+                continue
 
             # nurl / burl with ${AUCTION_PRICE} macro
             nurl = (

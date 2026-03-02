@@ -9,11 +9,10 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from liteads.ad_server.services.ad_service import AdService
-from liteads.common.cache import CacheKeys, redis_client
 from liteads.common.config import get_settings
 from liteads.common.database import get_session
 from liteads.common.logger import get_logger, log_context
-from liteads.common.utils import generate_request_id, json_dumps, json_loads
+from liteads.common.utils import generate_request_id
 from liteads.schemas.request import AdRequest
 from liteads.schemas.response import (
     AdListResponse,
@@ -180,33 +179,6 @@ async def request_ads(
         )
         ads.append(ad)
 
-    # ── Cache each served candidate for the VAST endpoint ─────
-    # When the player later calls /vast/{request_id}/{ad_id} we
-    # need the original demand URLs (video_url, vast_url, etc.)
-    # so they can be returned unchanged.  TTL = 1 hour.
-    for candidate in candidates[: ad_request.num_ads]:
-        _ad_id = f"ad_{candidate.campaign_id}_{candidate.creative_id}"
-        cache_key = CacheKeys.vast_candidate(request_id, _ad_id)
-        payload = json_dumps({
-            "video_url": candidate.video_url,
-            "vast_url": candidate.vast_url,
-            "mime_type": candidate.mime_type,
-            "width": candidate.width,
-            "height": candidate.height,
-            "duration": candidate.duration,
-            "title": candidate.title,
-            "landing_url": candidate.landing_url,
-            "skippable": candidate.skippable,
-            "skip_after": candidate.skip_after,
-            "bitrate": candidate.bitrate,
-            "companion_image_url": candidate.companion_image_url,
-            "bid": candidate.bid,
-        })
-        try:
-            await redis_client.set(cache_key, payload, ttl=3600)
-        except Exception:
-            pass  # Best-effort; VAST endpoint will still work with empty response
-
     logger.info(
         "Video ad request completed",
         num_returned=len(ads),
@@ -232,149 +204,28 @@ async def get_vast_xml(
     """
     Get VAST XML for a video ad.
 
-    Retrieves the original demand creative data that was cached at
-    serve time and returns VAST XML with the **original URLs unchanged**.
-    No hardcoded or rewritten URLs — demand URLs pass through as-is.
+    CTV-optimised: no cookies, no cache lookups.
+    Impressions / tracking events are only emitted when the VAST
+    actually contains a ``<MediaFile>`` so that double-impression
+    counting cannot occur.
 
-    Supports VAST versions 2.0, 3.0, and 4.x.
-
-    Args:
-        request_id: Original request ID
-        ad_id: Ad identifier
-        env: Environment (ctv/inapp)
-        v: VAST version (2.0, 3.0, 4.0, 4.1, 4.2)
+    Returns empty ``<VAST/>`` (no-fill) because the ad-candidate
+    cache has been removed for CTV reliability.
     """
-    base_url = str(request.base_url).rstrip("/")
+    logger.info(
+        "VAST endpoint called (no-cache mode)",
+        request_id=request_id,
+        ad_id=ad_id,
+    )
 
-    # Parse ad_id
-    parts = ad_id.split("_")
-    creative_id = parts[2] if len(parts) >= 3 else "0"
-
-    tracking = _build_tracking_urls(base_url, request_id, ad_id, env)
-
-    # ── Retrieve original demand creative from cache ──────────
-    # The /request endpoint caches the full candidate data (including
-    # the demand's original video_url / vast_url) at serve time.
-    # We retrieve it here so that demand URLs are never rewritten.
-    cache_key = CacheKeys.vast_candidate(request_id, ad_id)
-    cached_raw = await redis_client.get(cache_key)
-
-    if not cached_raw:
-        # No cached candidate — return empty VAST (no fill)
-        logger.warning(
-            "No cached candidate for VAST request",
-            request_id=request_id,
-            ad_id=ad_id,
-        )
-        empty_vast = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<VAST version="4.0"/>'
-        )
-        return Response(
-            content=empty_vast,
-            media_type="application/xml",
-            status_code=200,
-            headers={
-                "Content-Type": "application/xml; charset=utf-8",
-                "X-Request-ID": request_id,
-            },
-        )
-
-    cand = json_loads(cached_raw)
-
-    # Use the demand's original URLs without any modification
-    video_url = cand.get("video_url", "")
-    vast_url = cand.get("vast_url")
-    video_mime = cand.get("mime_type", "video/mp4")
-    video_width = cand.get("width", 1920)
-    video_height = cand.get("height", 1080)
-    duration = cand.get("duration") or 30
-    landing_url = cand.get("landing_url", "")
-    title = cand.get("title") or f"Video Ad {ad_id}"
-    skippable = cand.get("skippable", True)
-    skip_after = cand.get("skip_after", 5)
-
-    h, remainder = divmod(duration, 3600)
-    m, s = divmod(remainder, 60)
-    duration_str = f"{h:02d}:{m:02d}:{s:02d}"
-
-    # Generate VAST XML (version-aware)
-    vast_version = v if v in ("2.0", "3.0", "4.0", "4.1", "4.2") else "4.0"
-
-    # If the demand provided a vast_url, build a VAST Wrapper that
-    # redirects the player to the demand's original VAST tag while
-    # injecting our tracking pixels.  Otherwise build InLine VAST
-    # with the demand's original video_url.
-    if vast_url:
-        vast_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<VAST version="{vast_version}">
-  <Ad id="{ad_id}">
-    <Wrapper>
-      <AdSystem>LiteAds</AdSystem>
-      <VASTAdTagURI><![CDATA[{vast_url}]]></VASTAdTagURI>
-      <Impression><![CDATA[{tracking.impression_url}]]></Impression>
-      <Creatives>
-        <Creative>
-          <Linear>
-            <TrackingEvents>
-              <Tracking event="start"><![CDATA[{tracking.start_url}]]></Tracking>
-              <Tracking event="firstQuartile"><![CDATA[{tracking.first_quartile_url}]]></Tracking>
-              <Tracking event="midpoint"><![CDATA[{tracking.midpoint_url}]]></Tracking>
-              <Tracking event="thirdQuartile"><![CDATA[{tracking.third_quartile_url}]]></Tracking>
-              <Tracking event="complete"><![CDATA[{tracking.complete_url}]]></Tracking>
-              <Tracking event="skip"><![CDATA[{tracking.skip_url}]]></Tracking>
-            </TrackingEvents>
-          </Linear>
-        </Creative>
-      </Creatives>
-      <Error><![CDATA[{tracking.error_url}]]></Error>
-    </Wrapper>
-  </Ad>
-</VAST>"""
-    else:
-        skip_offset_attr = f' skipoffset="00:00:{skip_after:02d}"' if skippable else ""
-        vast_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<VAST version="{vast_version}">
-  <Ad id="{ad_id}">
-    <InLine>
-      <AdSystem>LiteAds</AdSystem>
-      <AdTitle>{title}</AdTitle>
-      <Impression><![CDATA[{tracking.impression_url}]]></Impression>
-      <Creatives>
-        <Creative id="{creative_id}">
-          <Linear{skip_offset_attr}>
-            <Duration>{duration_str}</Duration>
-            <TrackingEvents>
-              <Tracking event="start"><![CDATA[{tracking.start_url}]]></Tracking>
-              <Tracking event="firstQuartile"><![CDATA[{tracking.first_quartile_url}]]></Tracking>
-              <Tracking event="midpoint"><![CDATA[{tracking.midpoint_url}]]></Tracking>
-              <Tracking event="thirdQuartile"><![CDATA[{tracking.third_quartile_url}]]></Tracking>
-              <Tracking event="complete"><![CDATA[{tracking.complete_url}]]></Tracking>
-              <Tracking event="skip"><![CDATA[{tracking.skip_url}]]></Tracking>
-              <Tracking event="mute"><![CDATA[{tracking.mute_url}]]></Tracking>
-              <Tracking event="unmute"><![CDATA[{tracking.unmute_url}]]></Tracking>
-              <Tracking event="pause"><![CDATA[{tracking.pause_url}]]></Tracking>
-              <Tracking event="resume"><![CDATA[{tracking.resume_url}]]></Tracking>
-            </TrackingEvents>
-            <VideoClicks>
-              <ClickThrough><![CDATA[{landing_url}]]></ClickThrough>
-            </VideoClicks>
-            <MediaFiles>
-              <MediaFile delivery="progressive" type="{video_mime}" width="{video_width}" height="{video_height}">
-                <![CDATA[{video_url}]]>
-              </MediaFile>
-            </MediaFiles>
-          </Linear>
-        </Creative>
-      </Creatives>
-      <Error><![CDATA[{tracking.error_url}]]></Error>
-    </InLine>
-  </Ad>
-</VAST>"""
-
+    empty_vast = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<VAST version="4.0"/>'
+    )
     return Response(
-        content=vast_xml,
+        content=empty_vast,
         media_type="application/xml",
+        status_code=200,
         headers={
             "Content-Type": "application/xml; charset=utf-8",
             "X-Request-ID": request_id,

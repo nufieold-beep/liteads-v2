@@ -53,7 +53,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1087,12 +1087,20 @@ async def demand_dashboard(
     ),
 )
 async def integration_endpoints(
-    request: Any = None,
+    request: Request,
     base_url: str = Query(
-        "http://localhost:8000",
-        description="Override base URL (use your public server URL)",
+        "",
+        description="Override base URL (leave empty to auto-detect from request)",
     ),
 ) -> IntegrationEndpointsOut:
+    if not base_url:
+        # Auto-detect from proxy headers or request
+        fwd_host = request.headers.get("x-forwarded-host")
+        fwd_proto = request.headers.get("x-forwarded-proto", "http")
+        if fwd_host:
+            base_url = f"{fwd_proto}://{fwd_host}"
+        else:
+            base_url = str(request.base_url)
     base = base_url.rstrip("/")
 
     return IntegrationEndpointsOut(

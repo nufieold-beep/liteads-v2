@@ -24,6 +24,7 @@ from liteads.ad_server.services.openrtb_service import OpenRTBService
 from liteads.ad_server.middleware.metrics import record_no_bid
 from liteads.common.database import get_session
 from liteads.common.logger import get_logger
+from liteads.common.ortb_enricher import enrich_bid_request
 from liteads.schemas.openrtb import BidRequest, BidResponse, NoBidReason
 
 logger = get_logger(__name__)
@@ -118,12 +119,14 @@ async def openrtb_bid(
         user_agent=user_agent,
     )
 
-    # Enrich device IP from X-Forwarded-For when not provided in payload
-    if client_ip and bid_request.device and not bid_request.device.ip:
-        bid_request.device.ip = client_ip
-    # Enrich device UA from User-Agent header when not provided
-    if user_agent and bid_request.device and not bid_request.device.ua:
-        bid_request.device.ua = user_agent
+    # ── Auto-enrich missing fields with IAB-compliant defaults ──
+    # This ensures DSPs always receive a fully-formed ORTB request
+    # even when the publisher sends a minimal payload.
+    enrich_bid_request(
+        bid_request,
+        client_ip=client_ip,
+        user_agent=user_agent,
+    )
 
     # Validate that we have at least one video impression
     has_video = any(imp.video is not None for imp in bid_request.imp)

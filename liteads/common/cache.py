@@ -297,15 +297,6 @@ class CacheKeys:
     def user_feature(user_id: str) -> str:
         return f"user:feature:{user_id}"
 
-    # Frequency control
-    @staticmethod
-    def freq_daily(user_id: str, campaign_id: int, date: str) -> str:
-        return f"freq:daily:{user_id}:{campaign_id}:{date}"
-
-    @staticmethod
-    def freq_hourly(user_id: str, campaign_id: int, hour: str) -> str:
-        return f"freq:hourly:{user_id}:{campaign_id}:{hour}"
-
     # Statistics
     @staticmethod
     def stat_hourly(campaign_id: int, hour: str) -> str:
@@ -320,11 +311,6 @@ class CacheKeys:
     @staticmethod
     def model(model_name: str, version: str) -> str:
         return f"model:{model_name}:{version}"
-
-    # Served-ad candidate (for VAST endpoint retrieval)
-    @staticmethod
-    def vast_candidate(request_id: str, ad_id: str) -> str:
-        return f"vast:cand:{request_id}:{ad_id}"
 
     # Rate limiting
     @staticmethod

@@ -135,6 +135,8 @@ class Content(BaseModel):
     season: Optional[str] = None
     artist: Optional[str] = None
     genre: Optional[str] = None
+    gtax: Optional[int] = None          # Genre taxonomy (Section 5.26, e.g. 9=eGenre)
+    genres: list[str] = Field(default_factory=list)  # Genre codes from taxonomy
     album: Optional[str] = None
     isrc: Optional[str] = None
     producer: Optional[dict[str, Any]] = None
@@ -144,6 +146,8 @@ class Content(BaseModel):
     prodq: Optional[int] = None
     videoquality: Optional[int] = None  # Deprecated in 2.6 but still sent
     context: Optional[int] = None       # 1=video, 2=game, 3=music, 4=app
+    network: Optional[dict[str, Any]] = None   # Content network {"name": "..."}
+    channel: Optional[dict[str, Any]] = None   # Content channel {"name": "..."}
     contentrating: Optional[str] = None
     userrating: Optional[str] = None
     qagmediarating: Optional[int] = None
@@ -202,7 +206,9 @@ class User(BaseModel):
     yob: Optional[int] = None
     gender: Optional[str] = None        # M / F / O
     keywords: Optional[str] = None
+    customdata: Optional[str] = None    # Custom string for cookie matching
     data: list[Data] = Field(default_factory=list)
+    eids: list[dict[str, Any]] = Field(default_factory=list)  # Extended IDs (LiveRamp, UID2, etc.)
     ext: Optional[dict[str, Any]] = None
 
 

@@ -109,8 +109,8 @@ class Campaign(Base, TimestampMixin):
     freq_cap_hourly: Mapped[int] = mapped_column(Integer, default=3)
 
     # Schedule
-    start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Status
     status: Mapped[int] = mapped_column(Integer, default=Status.ACTIVE)
@@ -247,15 +247,17 @@ class AdEvent(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     campaign_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True
+        Integer, nullable=True, index=True,
+        comment="Campaign ID (NULL for external demand fills)",
     )
     creative_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("creatives.id", ondelete="SET NULL"), nullable=True
+        Integer, nullable=True,
+        comment="Creative ID (NULL for external demand fills)",
     )
     event_type: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="EventType enum value"
     )
-    event_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
 
@@ -310,9 +312,10 @@ class HourlyStat(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     campaign_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("campaigns.id"), nullable=False
+        Integer, nullable=False, index=True,
+        comment="Campaign ID (0 = external demand aggregate)",
     )
-    stat_hour: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    stat_hour: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # Request-level counters
     ad_requests: Mapped[int] = mapped_column(

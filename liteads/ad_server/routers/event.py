@@ -129,6 +129,12 @@ async def track_event_get(
     env: str = Query("ctv", description="Environment (ctv/inapp)"),
     pos: int | None = Query(None, description="Video position in seconds"),
     err: str | None = Query(None, description="VAST error code ([ERRORCODE] macro)"),
+    # Demand source analytics params (added by VAST tag builder)
+    src: str | None = Query(None, description="Source type (demand_ortb/demand_vast/local)"),
+    dom: str | None = Query(None, description="Advertiser domain (adomain)"),
+    bnd: str | None = Query(None, description="App bundle ID"),
+    cc: str | None = Query(None, description="Country code"),
+    bp: str | None = Query(None, description="Bid price (CPM)"),
     x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
     event_service: EventService = Depends(get_event_service),
 ) -> Response:
@@ -155,6 +161,14 @@ async def track_event_get(
         x_forwarded_for.split(",")[0].strip() if x_forwarded_for else None
     ) or (request.client.host if request.client else None)
 
+    # Parse bid price from tracking param
+    _win_price = 0.0
+    if bp:
+        try:
+            _win_price = float(bp)
+        except ValueError:
+            pass
+
     await event_service.track_event(
         request_id=req,
         ad_id=ad,
@@ -165,6 +179,11 @@ async def track_event_get(
         video_position=pos,
         extra=extra,
         ip_address=client_ip,
+        adomain=dom,
+        source_name=src,
+        bundle_id=bnd,
+        country_code=cc,
+        win_price=_win_price,
     )
 
     # Return 1x1 pixel — SSPs and video players expect an image response

@@ -79,7 +79,7 @@ class EventService:
             # ---- Impression deduplication ----
             # Prevent double-billing when both burl and VAST pixel fire
             # for the same (request_id, campaign_id) pair.
-            if event_type_enum == EventType.IMPRESSION and campaign_id:
+            if event_type_enum == EventType.IMPRESSION and campaign_id is not None:
                 dedup_key = f"imp_dedup:{request_id}:{campaign_id}"
                 is_new = await redis_client.set(
                     dedup_key, "1", ttl=3600, nx=True,
@@ -119,8 +119,13 @@ class EventService:
 
             # Calculate CPM cost on impression
             cost = Decimal("0.000000")
-            if event_type_enum == EventType.IMPRESSION and campaign_id:
-                cost = await self._calculate_cpm_cost(campaign_id)
+            if event_type_enum == EventType.IMPRESSION and campaign_id is not None:
+                if campaign_id > 0:
+                    # Local campaign — look up CPM from DB
+                    cost = await self._calculate_cpm_cost(campaign_id)
+                elif win_price > 0:
+                    # Demand fill — cost = bid_price / 1000 (CPM → per-impression)
+                    cost = Decimal(str(round(win_price / 1000, 6)))
 
             event = AdEvent(
                 request_id=request_id,
@@ -149,7 +154,7 @@ class EventService:
             await self._update_stats(campaign_id, event_type_enum, win_price=win_price)
 
             # Update budget spend on impression (CPM billing)
-            if event_type_enum == EventType.IMPRESSION and campaign_id:
+            if event_type_enum == EventType.IMPRESSION and campaign_id is not None:
                 await self._update_budget_spend(campaign_id, cost)
                 # Also track spend in hourly stats
                 if cost > 0:
@@ -197,16 +202,30 @@ class EventService:
 
         except Exception as e:
             logger.error(f"Failed to track video event: {e}")
+            # Rollback session so the context-manager commit doesn't hit
+            # PendingRollbackError and blow up the request lifecycle.
+            try:
+                await self.session.rollback()
+            except Exception:
+                pass
             return False
 
     def _parse_ad_id(self, ad_id: str) -> tuple[int | None, int | None]:
-        """Parse ad ID to extract campaign and creative IDs."""
+        """Parse ad ID to extract campaign and creative IDs.
+
+        For demand fills, campaign_id is 0 and creative_id is a random hash.
+        We store campaign_id=0 in the DB (FK constraints removed) and keep
+        the creative hash for correlation with demand partner reporting.
+        """
         try:
             parts = ad_id.split("_")
             if len(parts) >= 3:
-                return int(parts[1]), int(parts[2])
+                cid = int(parts[1])
+                crid = int(parts[2])
+                return cid if cid >= 0 else None, crid
             elif len(parts) >= 2:
-                return int(parts[1]), None
+                cid = int(parts[1])
+                return cid if cid >= 0 else None, None
             else:
                 return int(ad_id), None
         except (ValueError, IndexError):

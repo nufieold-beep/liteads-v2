@@ -23,8 +23,8 @@ database:
   name: "liteads"
   user: "liteads"
   password: ""
-  pool_size: 10
-  max_overflow: 20
+  pool_size: 20
+  max_overflow: 40
 
 redis:
   host: "localhost"
@@ -99,7 +99,7 @@ vast:
     - "4.1"
     - "4.2"
   default_vast_version: "4.0"
-  tracking_base_url: ""
+  tracking_base_url: "http://ads1.viadsmedia.com"
   include_companion: true
   default_skip_offset: 5
   error_tracking: true

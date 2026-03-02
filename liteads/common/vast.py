@@ -12,6 +12,7 @@ References:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -134,6 +135,26 @@ def _add_cdata_element(parent: Element, tag: str, text: str) -> Element:
     return el
 
 
+# Regex to find CDATA sections for unescaping
+_CDATA_RE = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.DOTALL)
+
+
+def _unescape_cdata(xml: str) -> str:
+    """Reverse ElementTree's escaping inside CDATA blocks.
+
+    ElementTree escapes ``&`` → ``&amp;``, ``<`` → ``&lt;``, ``>`` → ``&gt;``
+    in text nodes.  Inside ``<![CDATA[...]]>`` the content is literal, so
+    we must undo those escapes.
+    """
+    def _unescape(m: re.Match) -> str:
+        inner = m.group(1)
+        inner = inner.replace("&amp;", "&")
+        inner = inner.replace("&lt;", "<")
+        inner = inner.replace("&gt;", ">")
+        return f"<![CDATA[{inner}]]>"
+    return _CDATA_RE.sub(_unescape, xml)
+
+
 class VASTBuilder:
     """
     Build VAST XML documents (versions 2.0 – 4.2).
@@ -159,9 +180,9 @@ class VASTBuilder:
         # Post-process CDATA markers
         raw_xml = raw_xml.replace("__CDATA__", "<![CDATA[").replace("__ENDCDATA__", "]]>")
 
-        # Unescape HTML entities that ElementTree may have introduced inside CDATA
-        # (ElementTree escapes & < > etc.)
-        # This is safe because our CDATA content is URLs which we control
+        # Unescape HTML entities that ElementTree introduced inside CDATA.
+        # CDATA sections are literal text – &amp; must become plain &.
+        raw_xml = _unescape_cdata(raw_xml)
         return f'<?xml version="1.0" encoding="UTF-8"?>\n{raw_xml}'
 
     def build_wrapper(self, vast_tag_uri: str, creative: VASTCreative) -> str:
@@ -228,6 +249,7 @@ class VASTBuilder:
 
         raw_xml = tostring(root, encoding="unicode", xml_declaration=False)
         raw_xml = raw_xml.replace("__CDATA__", "<![CDATA[").replace("__ENDCDATA__", "]]>")
+        raw_xml = _unescape_cdata(raw_xml)
         return f'<?xml version="1.0" encoding="UTF-8"?>\n{raw_xml}'
 
     # ------------------------------------------------------------------

@@ -52,6 +52,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
     "orjson>=3.9.0",
+    "maxminddb>=2.4.0",
 ]
 
 [project.optional-dependencies]

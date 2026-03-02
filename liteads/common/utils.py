@@ -8,6 +8,7 @@ import hashlib
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, TypeVar
 
 import orjson
@@ -63,8 +64,15 @@ def hash_user_id(user_id: str) -> int:
 
 
 def json_dumps(obj: Any) -> str:
-    """Fast JSON serialization using orjson."""
-    return orjson.dumps(obj).decode("utf-8")
+    """Fast JSON serialization using orjson with Decimal support."""
+    return orjson.dumps(obj, default=_json_default).decode("utf-8")
+
+
+def _json_default(o: Any) -> Any:
+    """Handle types that orjson cannot serialize natively."""
+    if isinstance(o, Decimal):
+        return float(o)
+    raise TypeError(f"Type is not JSON serializable: {type(o).__name__}")
 
 
 def json_loads(s: str | bytes) -> Any:

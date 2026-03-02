@@ -16,7 +16,6 @@ from liteads.common.logger import get_logger
 from liteads.common.utils import Timer
 from liteads.rec_engine.filter.base import BaseFilter, CompositeFilter
 from liteads.rec_engine.filter.budget import BudgetFilter
-from liteads.rec_engine.filter.frequency import FrequencyFilter
 from liteads.rec_engine.filter.quality import DiversityFilter, QualityFilter
 from liteads.rec_engine.ranking.bidding import Bidding, RankingStrategy
 from liteads.rec_engine.ranking.predictor import (
@@ -63,7 +62,7 @@ class RecommendationConfig:
 
     # Filtering
     enable_budget_filter: bool = True
-    enable_frequency_filter: bool = True
+    enable_frequency_filter: bool = False   # CTV has no cookies/persistent user IDs
     enable_quality_filter: bool = True
 
     # Prediction — fill rate optimization replaces CTR/CVR
@@ -131,8 +130,8 @@ class RecommendationEngine:
         if self.config.enable_budget_filter:
             filters.append(BudgetFilter())
 
-        if self.config.enable_frequency_filter:
-            filters.append(FrequencyFilter())
+        # FrequencyFilter removed – CTV devices have no cookies or
+        # persistent user identifiers for frequency capping.
 
         if self.config.enable_quality_filter:
             filters.append(QualityFilter(require_video_url=True))

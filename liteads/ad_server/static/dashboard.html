@@ -219,6 +219,7 @@ tbody tr:hover{background:var(--bg3)}
   <div class="topbar-actions">
     <button class="btn btn-secondary btn-sm" onclick="refreshCurrentPage()">↻ Refresh</button>
     <span style="color:var(--fg3);font-size:12px" id="lastUpdated"></span>
+    <a href="/dashboard/logout" class="btn btn-secondary btn-sm" style="margin-left:8px;text-decoration:none" title="Sign out">⏻ Logout</a>
   </div>
 </div>
 
@@ -416,10 +417,14 @@ tbody tr:hover{background:var(--bg3)}
   </div>
 
   <div class="stats-grid" id="analyticsStats">
+    <div class="stat-card"><div class="label">Ad Requests</div><div class="value" id="anAdReqs">–</div></div>
+    <div class="stat-card accent"><div class="label">Ad Opportunities</div><div class="value" id="anAdOpps">–</div></div>
     <div class="stat-card blue"><div class="label">Impressions</div><div class="value" id="anImps">–</div></div>
     <div class="stat-card green"><div class="label">Completions</div><div class="value" id="anCompl">–</div></div>
     <div class="stat-card yellow"><div class="label">Clicks</div><div class="value" id="anClicks">–</div></div>
     <div class="stat-card accent"><div class="label">VTR</div><div class="value" id="anVtr">–</div></div>
+    <div class="stat-card blue"><div class="label">Fill Rate (Req)</div><div class="value" id="anFillReq">–</div></div>
+    <div class="stat-card green"><div class="label">Fill Rate (Opp)</div><div class="value" id="anFillOpp">–</div></div>
   </div>
 
   <div class="tabs">
@@ -505,7 +510,7 @@ tbody tr:hover{background:var(--bg3)}
         <a href="/docs" target="_blank">📄 API Documentation (Swagger UI)</a>
         <a href="/health" target="_blank">💚 Health Check</a>
         <a href="/metrics" target="_blank">📊 Prometheus Metrics</a>
-        <a id="grafanaLink" href="http://localhost:3000" target="_blank">📈 Grafana Dashboard</a>
+        <a id="grafanaLink" href="/grafana" target="_blank">📈 Grafana Dashboard</a>
       </div>
     </div>
   </div>
@@ -1382,15 +1387,20 @@ async function loadAnalytics(){
     try{
       const resp=await api('/api/v1/analytics/campaigns');
       const data=resp.campaigns||(Array.isArray(resp)?resp:[]);
-      let ti=0,tc=0,tk=0;data.forEach(c=>{ti+=c.impressions||0;tc+=c.completions||0;tk+=c.clicks||0});
+      let ti=0,tc=0,tk=0,tReqs=0,tOpps=0;data.forEach(c=>{ti+=c.impressions||0;tc+=c.completions||0;tk+=c.clicks||0;tReqs+=c.ad_requests||0;tOpps+=c.ad_opportunities||0});
+      $('anAdReqs').textContent=fmtNum(tReqs);$('anAdOpps').textContent=fmtNum(tOpps);
       $('anImps').textContent=fmtNum(ti);$('anCompl').textContent=fmtNum(tc);$('anClicks').textContent=fmtNum(tk);
       $('anVtr').textContent=ti>0?((tc/ti)*100).toFixed(1)+'%':'—';
+      $('anFillReq').textContent=tReqs>0?((ti/tReqs)*100).toFixed(1)+'%':'—';
+      $('anFillOpp').textContent=tOpps>0?((ti/tOpps)*100).toFixed(1)+'%':'—';
       $('analyticsTableWrap').innerHTML=data.length?
-        `<table><thead><tr><th>Campaign</th><th>Imps</th><th>Completions</th><th>Clicks</th><th>CTR</th><th>VTR</th><th>Spend</th></tr></thead>
+        `<table><thead><tr><th>Campaign</th><th>Ad Reqs</th><th>Ad Opps</th><th>Imps</th><th>Completions</th><th>Clicks</th><th>CTR</th><th>VTR</th><th>Fill Rate</th><th>Spend</th></tr></thead>
         <tbody>${data.map(c=>`<tr><td><strong>${esc(c.name||'Campaign '+(c.campaign_id||c.id))}</strong></td>
+        <td>${fmtNum(c.ad_requests||0)}</td><td>${fmtNum(c.ad_opportunities||0)}</td>
         <td>${fmtNum(c.impressions)}</td><td>${fmtNum(c.completions)}</td><td>${fmtNum(c.clicks)}</td>
         <td>${c.impressions?((c.clicks/c.impressions)*100).toFixed(2)+'%':'—'}</td>
         <td>${c.impressions?((c.completions/c.impressions)*100).toFixed(1)+'%':'—'}</td>
+        <td>${(c.ad_requests||0)>0?(((c.impressions||0)/(c.ad_requests||1))*100).toFixed(1)+'%':'—'}</td>
         <td>${fmtMoney(c.spent_today||c.spend||0)}</td></tr>`).join('')}</tbody></table>`
         :'<p style="color:var(--fg3);text-align:center;padding:20px">No analytics data</p>';
     }catch(e){$('analyticsTableWrap').innerHTML='<p style="color:var(--fg3);text-align:center;padding:20px">Error loading analytics</p>'}
@@ -1400,9 +1410,12 @@ async function loadAnalytics(){
   if(currentAnalyticsTab==='today'){
     try{
       const d=await api(`/api/v1/analytics/campaign/${campId}/today`);
+      $('anAdReqs').textContent=fmtNum(d.ad_requests||0);$('anAdOpps').textContent=fmtNum(d.ad_opportunities||0);
       $('anImps').textContent=fmtNum(d.impressions||0);$('anCompl').textContent=fmtNum(d.completions||0);
       $('anClicks').textContent=fmtNum(d.clicks||0);
       $('anVtr').textContent=(d.impressions||0)>0?((d.completions||0)/d.impressions*100).toFixed(1)+'%':'—';
+      $('anFillReq').textContent=(d.ad_requests||0)>0?((d.impressions||0)/(d.ad_requests||1)*100).toFixed(1)+'%':'—';
+      $('anFillOpp').textContent=(d.ad_opportunities||0)>0?((d.impressions||0)/(d.ad_opportunities||1)*100).toFixed(1)+'%':'—';
       $('analyticsTableWrap').innerHTML=`<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>`+
         Object.entries(d).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${typeof v==='number'?(k.includes('price')||k.includes('spend')||k.includes('revenue')?fmtMoney(v):fmtNum(v)):esc(String(v))}</td></tr>`).join('')+`</tbody></table>`;
     }catch(e){}

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal_column, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -249,7 +249,11 @@ class AnalyticsService:
     # ══════════════════════════════════════════════════════════════════════
 
     async def get_all_campaigns_summary(self) -> list[dict[str, Any]]:
-        """Summary view of all campaigns with real-time Redis data."""
+        """Summary view of all campaigns with real-time Redis data.
+
+        Includes today's ad_requests and ad_opportunities from Redis
+        hourly stat buckets for each campaign.
+        """
         result = await self.session.execute(
             select(
                 Campaign.id,
@@ -274,6 +278,16 @@ class AnalyticsService:
             raw = await redis_client.hgetall(budget_key)
             spent_today = float(raw.get("spent_today", "0"))
 
+            # Aggregate today's ad_requests and ad_opportunities from hourly Redis buckets
+            today_ad_reqs = 0
+            today_ad_opps = 0
+            for h in range(24):
+                hour_key = f"{today}{h:02d}"
+                stat_key = CacheKeys.stat_hourly(row.id, hour_key)
+                hraw = await redis_client.hgetall(stat_key)
+                today_ad_reqs += int(hraw.get("ad_requests", "0"))
+                today_ad_opps += int(hraw.get("ad_opportunities", "0"))
+
             summaries.append({
                 "campaign_id": row.id,
                 "name": row.name,
@@ -286,6 +300,8 @@ class AnalyticsService:
                 "impressions": row.impressions,
                 "completions": row.completions,
                 "clicks": row.clicks,
+                "ad_requests": today_ad_reqs,
+                "ad_opportunities": today_ad_opps,
             })
 
         return summaries
@@ -318,9 +334,14 @@ class AnalyticsService:
             filters.append(AdEvent.campaign_id == campaign_id)
 
         # Impressions / revenue grouped by demand dimensions
+        # Use literal_column for COALESCE defaults to avoid asyncpg
+        # parameter-position mismatch between SELECT and GROUP BY.
+        adomain_col = func.coalesce(
+            AdEvent.adomain, literal_column("'unknown'"),
+        )
         imp_q = (
             select(
-                func.coalesce(AdEvent.adomain, "unknown").label("adomain"),
+                adomain_col.label("adomain"),
                 AdEvent.campaign_id.label("demand_id"),
                 AdEvent.creative_id.label("demand_creative_id"),
                 func.count().label("impressions"),
@@ -329,7 +350,7 @@ class AnalyticsService:
             )
             .where(*filters)
             .group_by(
-                func.coalesce(AdEvent.adomain, "unknown"),
+                adomain_col,
                 AdEvent.campaign_id,
                 AdEvent.creative_id,
             )
@@ -405,22 +426,34 @@ class AnalyticsService:
         if campaign_id:
             filters.append(AdEvent.campaign_id == campaign_id)
 
+        # Use literal_column for COALESCE defaults to avoid asyncpg
+        # parameter-position mismatch between SELECT and GROUP BY.
+        source_col = func.coalesce(
+            AdEvent.source_name, literal_column("'direct'"),
+        )
+        country_col = func.coalesce(
+            AdEvent.country_code, literal_column("'XX'"),
+        )
+        bundle_col = func.coalesce(
+            AdEvent.bundle_id, literal_column("'unknown'"),
+        )
+
         q = (
             select(
-                func.coalesce(AdEvent.source_name, "direct").label("source_name"),
+                source_col.label("source_name"),
                 AdEvent.campaign_id,
-                func.coalesce(AdEvent.country_code, "XX").label("country_code"),
-                func.coalesce(AdEvent.bundle_id, "unknown").label("bundle_id"),
+                country_col.label("country_code"),
+                bundle_col.label("bundle_id"),
                 func.count().label("impressions"),
                 func.sum(AdEvent.cost).label("total_revenue"),
                 func.sum(AdEvent.win_price).label("channel_revenue"),
             )
             .where(*filters)
             .group_by(
-                func.coalesce(AdEvent.source_name, "direct"),
+                source_col,
                 AdEvent.campaign_id,
-                func.coalesce(AdEvent.country_code, "XX"),
-                func.coalesce(AdEvent.bundle_id, "unknown"),
+                country_col,
+                bundle_col,
             )
         )
 

@@ -156,7 +156,7 @@ class AdService:
             ctx.content_genre = request.app.content_genre or ""
             ctx.content_rating = request.app.content_rating or ""
             ctx.content_id = request.app.content_id or ""
-            ctx.network = request.app.network or ""
+            ctx.network = request.app.network_name or ""
 
         # Video placement info
         if request.video:

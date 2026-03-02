@@ -57,6 +57,8 @@ class DatabaseManager:
             pool_size=settings.database.pool_size,
             max_overflow=settings.database.max_overflow,
             pool_pre_ping=True,
+            pool_recycle=1800,  # Recycle connections every 30 min
+            pool_timeout=10,    # Wait up to 10s for a connection from pool
             echo=settings.debug,
         )
 

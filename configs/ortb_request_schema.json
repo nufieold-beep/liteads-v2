@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://viadsmedia.com/schemas/ortb-bid-request.json",
+  "title": "OpenRTB 2.6 Bid Request – VIAds CTV/In-App Video",
+  "description": "Canonical OpenRTB 2.6 bid request schema for CTV and in-app video. Fields with 'default' are auto-filled by the enrichment layer if the publisher omits them.",
+  "type": "object",
+  "required": ["id", "imp"],
+  "properties": {
+    "id":   { "type": "string",  "description": "Unique auction ID (auto-generated UUID if absent)" },
+    "at":   { "type": "integer", "default": 1, "description": "Auction type: 1=first-price, 2=second-price" },
+    "tmax": { "type": "integer", "default": 500, "description": "Max response time (ms)" },
+    "cur":  { "type": "array",   "items": { "type": "string" }, "default": ["USD"] },
+
+    "imp": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id":           { "type": "string",  "default": "1" },
+          "tagid":        { "type": "string",  "default": "SELLER_PLACEMENT_ID", "description": "Filled from supply-tag slot_id" },
+          "bidfloor":     { "type": "number",  "default": 5.0 },
+          "bidfloorcur":  { "type": "string",  "default": "USD" },
+          "video": {
+            "type": "object",
+            "properties": {
+              "mimes":          { "type": "array",   "items": { "type": "string" },  "default": ["video/mp4"] },
+              "protocols":      { "type": "array",   "items": { "type": "integer" }, "default": [2,3,5,6,7,8] },
+              "w":              { "type": "integer", "default": 1920 },
+              "h":              { "type": "integer", "default": 1080 },
+              "plcmt":          { "type": "integer", "default": 1, "description": "1=In-Stream" },
+              "placement":      { "type": "integer", "default": 1, "description": "1=In-Stream" },
+              "linearity":      { "type": "integer", "default": 1, "description": "1=Linear (in-stream)" },
+              "startdelay":     { "type": "integer", "default": 0, "description": "0=pre-roll" },
+              "minduration":    { "type": "integer", "default": 3 },
+              "maxduration":    { "type": "integer", "default": 30 },
+              "playbackmethod": { "type": "array",   "items": { "type": "integer" }, "default": [1,3,4,5] },
+              "delivery":       { "type": "array",   "items": { "type": "integer" }, "default": [2] },
+              "skip":           { "type": "integer", "default": 0, "description": "0=not-skippable" }
+            }
+          }
+        }
+      }
+    },
+
+    "app": {
+      "type": "object",
+      "properties": {
+        "id":      { "type": "string", "default": "APP_ID" },
+        "name":    { "type": "string", "default": "APP_NAME" },
+        "bundle":  { "type": "string", "default": "com.example.ctv" },
+        "publisher": {
+          "type": "object",
+          "properties": {
+            "id":   { "type": "string", "default": "PUB_ID" },
+            "name": { "type": "string", "default": "PUBLISHER" }
+          }
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "id":         { "type": "string"  },
+            "title":      { "type": "string"  },
+            "series":     { "type": "string"  },
+            "season":     { "type": "string"  },
+            "episode":    { "type": "integer" },
+            "len":        { "type": "integer", "default": 1800 },
+            "livestream": { "type": "integer", "default": 0 },
+            "language":   { "type": "string",  "default": "en" },
+            "cat":        { "type": "array",   "items": { "type": "string" }, "default": ["IAB1-6"] }
+          }
+        }
+      }
+    },
+
+    "device": {
+      "type": "object",
+      "properties": {
+        "devicetype": { "type": "integer", "default": 3, "description": "3=CTV, 7=STB, 1=Mobile" },
+        "ua":         { "type": "string",  "description": "User-Agent (auto-filled from HTTP header)" },
+        "ip":         { "type": "string",  "description": "User IP (auto-filled from X-Forwarded-For)" },
+        "make":       { "type": "string",  "default": "Samsung" },
+        "model":      { "type": "string",  "default": "SmartTV" },
+        "os":         { "type": "string",  "default": "Tizen" },
+        "osv":        { "type": "string",  "default": "7.0" },
+        "ifa":        { "type": "string",  "description": "IFA (RIDA/AFAI/IDFA/TIFA/GAID/LGUDID)" },
+        "lmt":        { "type": "integer", "default": 0 },
+        "dnt":        { "type": "integer", "default": 0 },
+        "language":   { "type": "string",  "default": "en" }
+      }
+    },
+
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ext": {
+          "type": "object",
+          "properties": {
+            "consent": { "type": "string", "description": "TCF or other consent string" },
+            "eids":    { "type": "array",  "items": { "type": "object" }, "default": [] }
+          }
+        }
+      }
+    },
+
+    "regs": {
+      "type": "object",
+      "properties": {
+        "coppa": { "type": "integer", "default": 0 },
+        "ext": {
+          "type": "object",
+          "properties": {
+            "gdpr":       { "type": "integer", "default": 0 },
+            "us_privacy": { "type": "string",  "default": "1---" }
+          }
+        }
+      }
+    },
+
+    "source": {
+      "type": "object",
+      "properties": {
+        "ext": {
+          "type": "object",
+          "properties": {
+            "schain": {
+              "type": "object",
+              "properties": {
+                "ver":      { "type": "string",  "default": "1.0" },
+                "complete": { "type": "integer", "default": 1 },
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "asi":    { "type": "string",  "default": "viadsmedia.com" },
+                      "sid":    { "type": "string",  "default": "778008" },
+                      "hp":     { "type": "integer", "default": 1 }
+                    },
+                    "required": ["asi", "sid", "hp"]
+                  },
+                  "default": [{ "asi": "viadsmedia.com", "sid": "778008", "hp": 1 }]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
