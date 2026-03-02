@@ -36,15 +36,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, TypeVar
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from liteads.common.database import get_session
 from liteads.common.logger import get_logger
+from liteads.common.orm_utils import apply_updates, get_or_404
 from liteads.models import (
     Advertiser,
     Campaign,
@@ -253,32 +254,6 @@ class TargetingRuleOut(BaseModel):
 
 
 # ============================================================================
-# Helpers
-# ============================================================================
-
-_T = TypeVar("_T")
-
-
-async def _get_or_404(session: AsyncSession, model: type[_T], entity_id: int, label: str = "Entity") -> _T:
-    """Fetch a model instance by ID or raise 404."""
-    result = await session.execute(select(model).where(model.id == entity_id))  # type: ignore[arg-type]
-    obj = result.scalar_one_or_none()
-    if not obj:
-        raise HTTPException(status_code=404, detail=f"{label} {entity_id} not found")
-    return obj
-
-
-def _apply_updates(obj: Any, updates: BaseModel) -> None:
-    """Apply non-None fields from a Pydantic update model onto an ORM object."""
-    for field_name, value in updates.model_dump(exclude_unset=True).items():
-        if value is not None:
-            col_attr = getattr(type(obj), field_name, None)  # type: ignore[arg-type]
-            if isinstance(value, float) and hasattr(col_attr, "type"):
-                value = Decimal(str(value))
-            setattr(obj, field_name, value)
-
-
-# ============================================================================
 # ADVERTISER endpoints
 # ============================================================================
 
@@ -317,7 +292,7 @@ async def list_advertisers(
 
 @router.get("/advertisers/{adv_id}", response_model=AdvertiserOut, summary="Get advertiser")
 async def get_advertiser(adv_id: int, session: AsyncSession = Depends(get_session)) -> Any:
-    return await _get_or_404(session, Advertiser, adv_id, "Advertiser")
+    return await get_or_404(session, Advertiser, adv_id, "Advertiser")
 
 
 @router.put("/advertisers/{adv_id}", response_model=AdvertiserOut, summary="Update advertiser")
@@ -326,8 +301,8 @@ async def update_advertiser(
     body: AdvertiserUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    adv = await _get_or_404(session, Advertiser, adv_id, "Advertiser")
-    _apply_updates(adv, body)
+    adv = await get_or_404(session, Advertiser, adv_id, "Advertiser")
+    apply_updates(adv, body)
     await session.flush()
     await session.refresh(adv)
     logger.info("Advertiser updated", advertiser_id=adv_id)
@@ -336,7 +311,7 @@ async def update_advertiser(
 
 @router.delete("/advertisers/{adv_id}", status_code=204, summary="Soft-delete advertiser")
 async def delete_advertiser(adv_id: int, session: AsyncSession = Depends(get_session)) -> None:
-    adv = await _get_or_404(session, Advertiser, adv_id, "Advertiser")
+    adv = await get_or_404(session, Advertiser, adv_id, "Advertiser")
     adv.status = ModelStatus.DELETED
     await session.flush()
     logger.info("Advertiser soft-deleted", advertiser_id=adv_id)
@@ -352,7 +327,7 @@ async def create_campaign(
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     # Verify advertiser exists
-    await _get_or_404(session, Advertiser, body.advertiser_id, "Advertiser")
+    await get_or_404(session, Advertiser, body.advertiser_id, "Advertiser")
 
     campaign = Campaign(
         advertiser_id=body.advertiser_id,
@@ -397,7 +372,7 @@ async def list_campaigns(
 
 @router.get("/campaigns/{camp_id}", response_model=CampaignOut, summary="Get campaign")
 async def get_campaign(camp_id: int, session: AsyncSession = Depends(get_session)) -> Any:
-    return await _get_or_404(session, Campaign, camp_id, "Campaign")
+    return await get_or_404(session, Campaign, camp_id, "Campaign")
 
 
 @router.put("/campaigns/{camp_id}", response_model=CampaignOut, summary="Update campaign")
@@ -406,8 +381,8 @@ async def update_campaign(
     body: CampaignUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    campaign = await _get_or_404(session, Campaign, camp_id, "Campaign")
-    _apply_updates(campaign, body)
+    campaign = await get_or_404(session, Campaign, camp_id, "Campaign")
+    apply_updates(campaign, body)
     await session.flush()
     await session.refresh(campaign)
     logger.info("Campaign updated", campaign_id=camp_id)
@@ -424,7 +399,7 @@ async def update_campaign_status(
     body: CampaignStatusUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    campaign = await _get_or_404(session, Campaign, camp_id, "Campaign")
+    campaign = await get_or_404(session, Campaign, camp_id, "Campaign")
     campaign.status = body.status
     await session.flush()
     await session.refresh(campaign)
@@ -434,7 +409,7 @@ async def update_campaign_status(
 
 @router.delete("/campaigns/{camp_id}", status_code=204, summary="Soft-delete campaign")
 async def delete_campaign(camp_id: int, session: AsyncSession = Depends(get_session)) -> None:
-    campaign = await _get_or_404(session, Campaign, camp_id, "Campaign")
+    campaign = await get_or_404(session, Campaign, camp_id, "Campaign")
     campaign.status = ModelStatus.DELETED
     await session.flush()
     logger.info("Campaign soft-deleted", campaign_id=camp_id)
@@ -466,7 +441,7 @@ async def create_creative(
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     # Verify campaign exists
-    await _get_or_404(session, Campaign, body.campaign_id, "Campaign")
+    await get_or_404(session, Campaign, body.campaign_id, "Campaign")
 
     creative = Creative(
         campaign_id=body.campaign_id,
@@ -504,7 +479,7 @@ async def create_creative(
 async def get_creative(
     creative_id: int, session: AsyncSession = Depends(get_session)
 ) -> Any:
-    return await _get_or_404(session, Creative, creative_id, "Creative")
+    return await get_or_404(session, Creative, creative_id, "Creative")
 
 
 @router.put("/creatives/{creative_id}", response_model=CreativeOut, summary="Update creative")
@@ -513,8 +488,8 @@ async def update_creative(
     body: CreativeUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    creative = await _get_or_404(session, Creative, creative_id, "Creative")
-    _apply_updates(creative, body)
+    creative = await get_or_404(session, Creative, creative_id, "Creative")
+    apply_updates(creative, body)
     await session.flush()
     await session.refresh(creative)
     logger.info("Creative updated", creative_id=creative_id)
@@ -525,7 +500,7 @@ async def update_creative(
 async def delete_creative(
     creative_id: int, session: AsyncSession = Depends(get_session)
 ) -> None:
-    creative = await _get_or_404(session, Creative, creative_id, "Creative")
+    creative = await get_or_404(session, Creative, creative_id, "Creative")
     creative.status = ModelStatus.DELETED
     await session.flush()
     logger.info("Creative soft-deleted", creative_id=creative_id)
@@ -546,7 +521,7 @@ async def create_targeting_rule(
     body: TargetingRuleCreate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    await _get_or_404(session, Campaign, camp_id, "Campaign")
+    await get_or_404(session, Campaign, camp_id, "Campaign")
 
     rule = TargetingRule(
         campaign_id=camp_id,
@@ -581,7 +556,7 @@ async def delete_targeting_rule(
     rule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    rule = await _get_or_404(session, TargetingRule, rule_id, "Targeting rule")
+    rule = await get_or_404(session, TargetingRule, rule_id, "Targeting rule")
     await session.delete(rule)
     await session.flush()
     logger.info("Targeting rule deleted", rule_id=rule_id)

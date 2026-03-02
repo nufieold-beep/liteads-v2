@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from liteads.common.database import get_session
 from liteads.common.logger import get_logger
+from liteads.common.orm_utils import apply_updates, get_or_404
 from liteads.models import (
     DemandEndpoint,
     DemandVastTag,
@@ -183,22 +184,6 @@ class MappingOut(BaseModel):
 # Helpers
 # ============================================================================
 
-async def _get_or_404(session: AsyncSession, model: type, entity_id: int, label: str = "Entity"):
-    result = await session.execute(select(model).where(model.id == entity_id))
-    obj = result.scalar_one_or_none()
-    if not obj:
-        raise HTTPException(status_code=404, detail=f"{label} {entity_id} not found")
-    return obj
-
-
-def _apply_updates(obj: Any, updates: BaseModel) -> None:
-    for field_name, value in updates.model_dump(exclude_unset=True).items():
-        if value is not None:
-            if isinstance(value, float):
-                value = Decimal(str(value))
-            setattr(obj, field_name, value)
-
-
 def _supply_tag_out(tag: SupplyTag) -> SupplyTagOut:
     return SupplyTagOut(
         id=tag.id,
@@ -285,7 +270,7 @@ async def list_supply_tags(
 
 @router.get("/supply-tags/{tag_id}", response_model=SupplyTagOut, summary="Get supply tag")
 async def get_supply_tag(tag_id: int, session: AsyncSession = Depends(get_session)) -> Any:
-    tag = await _get_or_404(session, SupplyTag, tag_id, "Supply tag")
+    tag = await get_or_404(session, SupplyTag, tag_id, "Supply tag")
     return _supply_tag_out(tag)
 
 
@@ -295,8 +280,8 @@ async def update_supply_tag(
     body: SupplyTagUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    tag = await _get_or_404(session, SupplyTag, tag_id, "Supply tag")
-    _apply_updates(tag, body)
+    tag = await get_or_404(session, SupplyTag, tag_id, "Supply tag")
+    apply_updates(tag, body)
     await session.flush()
     await session.refresh(tag)
     logger.info("Supply tag updated", tag_id=tag_id)
@@ -305,7 +290,7 @@ async def update_supply_tag(
 
 @router.delete("/supply-tags/{tag_id}", status_code=204, summary="Soft-delete supply tag")
 async def delete_supply_tag(tag_id: int, session: AsyncSession = Depends(get_session)) -> None:
-    tag = await _get_or_404(session, SupplyTag, tag_id, "Supply tag")
+    tag = await get_or_404(session, SupplyTag, tag_id, "Supply tag")
     tag.status = ModelStatus.DELETED
     await session.flush()
     logger.info("Supply tag soft-deleted", tag_id=tag_id)
@@ -352,7 +337,7 @@ async def list_demand_endpoints(
 
 @router.get("/demand-endpoints/{ep_id}", response_model=DemandEndpointOut, summary="Get demand endpoint")
 async def get_demand_endpoint(ep_id: int, session: AsyncSession = Depends(get_session)) -> Any:
-    return await _get_or_404(session, DemandEndpoint, ep_id, "Demand endpoint")
+    return await get_or_404(session, DemandEndpoint, ep_id, "Demand endpoint")
 
 
 @router.put("/demand-endpoints/{ep_id}", response_model=DemandEndpointOut, summary="Update demand endpoint")
@@ -361,8 +346,8 @@ async def update_demand_endpoint(
     body: DemandEndpointUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    ep = await _get_or_404(session, DemandEndpoint, ep_id, "Demand endpoint")
-    _apply_updates(ep, body)
+    ep = await get_or_404(session, DemandEndpoint, ep_id, "Demand endpoint")
+    apply_updates(ep, body)
     await session.flush()
     await session.refresh(ep)
     logger.info("Demand endpoint updated", ep_id=ep_id)
@@ -371,7 +356,7 @@ async def update_demand_endpoint(
 
 @router.delete("/demand-endpoints/{ep_id}", status_code=204, summary="Soft-delete demand endpoint")
 async def delete_demand_endpoint(ep_id: int, session: AsyncSession = Depends(get_session)) -> None:
-    ep = await _get_or_404(session, DemandEndpoint, ep_id, "Demand endpoint")
+    ep = await get_or_404(session, DemandEndpoint, ep_id, "Demand endpoint")
     ep.status = ModelStatus.DELETED
     await session.flush()
     logger.info("Demand endpoint soft-deleted", ep_id=ep_id)
@@ -417,7 +402,7 @@ async def list_demand_vast_tags(
 
 @router.get("/demand-vast-tags/{dvt_id}", response_model=DemandVastTagOut, summary="Get demand VAST tag")
 async def get_demand_vast_tag(dvt_id: int, session: AsyncSession = Depends(get_session)) -> Any:
-    return await _get_or_404(session, DemandVastTag, dvt_id, "Demand VAST tag")
+    return await get_or_404(session, DemandVastTag, dvt_id, "Demand VAST tag")
 
 
 @router.put("/demand-vast-tags/{dvt_id}", response_model=DemandVastTagOut, summary="Update demand VAST tag")
@@ -426,8 +411,8 @@ async def update_demand_vast_tag(
     body: DemandVastTagUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    dvt = await _get_or_404(session, DemandVastTag, dvt_id, "Demand VAST tag")
-    _apply_updates(dvt, body)
+    dvt = await get_or_404(session, DemandVastTag, dvt_id, "Demand VAST tag")
+    apply_updates(dvt, body)
     await session.flush()
     await session.refresh(dvt)
     logger.info("Demand VAST tag updated", dvt_id=dvt_id)
@@ -436,7 +421,7 @@ async def update_demand_vast_tag(
 
 @router.delete("/demand-vast-tags/{dvt_id}", status_code=204, summary="Soft-delete demand VAST tag")
 async def delete_demand_vast_tag(dvt_id: int, session: AsyncSession = Depends(get_session)) -> None:
-    dvt = await _get_or_404(session, DemandVastTag, dvt_id, "Demand VAST tag")
+    dvt = await get_or_404(session, DemandVastTag, dvt_id, "Demand VAST tag")
     dvt.status = ModelStatus.DELETED
     await session.flush()
     logger.info("Demand VAST tag soft-deleted", dvt_id=dvt_id)
@@ -457,11 +442,11 @@ async def create_mapping(
         raise HTTPException(400, "Specify only one of demand_endpoint_id or demand_vast_tag_id")
 
     # Verify referenced entities exist
-    await _get_or_404(session, SupplyTag, body.supply_tag_id, "Supply tag")
+    await get_or_404(session, SupplyTag, body.supply_tag_id, "Supply tag")
     if body.demand_endpoint_id:
-        await _get_or_404(session, DemandEndpoint, body.demand_endpoint_id, "Demand endpoint")
+        await get_or_404(session, DemandEndpoint, body.demand_endpoint_id, "Demand endpoint")
     if body.demand_vast_tag_id:
-        await _get_or_404(session, DemandVastTag, body.demand_vast_tag_id, "Demand VAST tag")
+        await get_or_404(session, DemandVastTag, body.demand_vast_tag_id, "Demand VAST tag")
 
     m = SupplyDemandMapping(
         supply_tag_id=body.supply_tag_id,
@@ -493,7 +478,7 @@ async def list_mappings(
 
 @router.delete("/mappings/{mapping_id}", status_code=204, summary="Delete supply-demand mapping")
 async def delete_mapping(mapping_id: int, session: AsyncSession = Depends(get_session)) -> None:
-    m = await _get_or_404(session, SupplyDemandMapping, mapping_id, "Mapping")
+    m = await get_or_404(session, SupplyDemandMapping, mapping_id, "Mapping")
     await session.delete(m)
     await session.flush()
     logger.info("Supply-demand mapping deleted", mapping_id=mapping_id)

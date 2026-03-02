@@ -60,6 +60,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from liteads.common.database import get_session
 from liteads.common.logger import get_logger
+from liteads.common.orm_utils import apply_updates, get_or_404
 from liteads.models import (
     AdEvent,
     Advertiser,
@@ -411,28 +412,12 @@ def _enrich_creative(creative: Creative) -> DemandCreativeOut:
     )
 
 
-async def _get_or_404(session: AsyncSession, model: type, entity_id: int, label: str = "Entity"):
-    result = await session.execute(select(model).where(model.id == entity_id))
-    obj = result.scalar_one_or_none()
-    if not obj:
-        raise HTTPException(status_code=404, detail=f"{label} {entity_id} not found")
-    return obj
-
-
 async def _verify_campaign_owner(session: AsyncSession, camp_id: int, adv_id: int) -> Campaign:
     """Get campaign and verify it belongs to the advertiser."""
-    campaign = await _get_or_404(session, Campaign, camp_id, "Campaign")
+    campaign = await get_or_404(session, Campaign, camp_id, "Campaign")
     if campaign.advertiser_id != adv_id:
         raise HTTPException(status_code=403, detail="Campaign does not belong to this advertiser")
     return campaign
-
-
-def _apply_updates(obj: Any, updates: BaseModel) -> None:
-    for field_name, value in updates.model_dump(exclude_unset=True).items():
-        if value is not None:
-            if isinstance(value, float):
-                value = Decimal(str(value))
-            setattr(obj, field_name, value)
 
 
 # ============================================================================
@@ -484,7 +469,7 @@ async def get_account(
     adv_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    adv = await _get_or_404(session, Advertiser, adv_id, "Advertiser")
+    adv = await get_or_404(session, Advertiser, adv_id, "Advertiser")
 
     # Count campaigns
     total_q = await session.execute(
@@ -521,8 +506,8 @@ async def update_account(
     body: DemandAccountUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    adv = await _get_or_404(session, Advertiser, adv_id, "Advertiser")
-    _apply_updates(adv, body)
+    adv = await get_or_404(session, Advertiser, adv_id, "Advertiser")
+    apply_updates(adv, body)
     await session.flush()
     await session.refresh(adv)
     logger.info("Demand account updated", advertiser_id=adv_id)
@@ -540,7 +525,7 @@ async def fund_account(
     body: DemandFundRequest,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    adv = await _get_or_404(session, Advertiser, adv_id, "Advertiser")
+    adv = await get_or_404(session, Advertiser, adv_id, "Advertiser")
     adv.balance = adv.balance + Decimal(str(body.amount))
     await session.flush()
     await session.refresh(adv)
@@ -567,7 +552,7 @@ async def create_campaign(
     advertiser_id: int = Query(..., description="Your advertiser ID"),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    await _get_or_404(session, Advertiser, advertiser_id, "Advertiser")
+    await get_or_404(session, Advertiser, advertiser_id, "Advertiser")
 
     campaign = Campaign(
         advertiser_id=advertiser_id,
@@ -637,7 +622,7 @@ async def update_campaign(
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     campaign = await _verify_campaign_owner(session, camp_id, advertiser_id)
-    _apply_updates(campaign, body)
+    apply_updates(campaign, body)
     await session.flush()
     await session.refresh(campaign)
     logger.info("Demand campaign updated", campaign_id=camp_id)
@@ -779,13 +764,13 @@ async def update_creative(
     advertiser_id: int = Query(..., description="Your advertiser ID"),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    creative = await _get_or_404(session, Creative, creative_id, "Creative")
+    creative = await get_or_404(session, Creative, creative_id, "Creative")
     # Verify ownership
-    campaign = await _get_or_404(session, Campaign, creative.campaign_id, "Campaign")
+    campaign = await get_or_404(session, Campaign, creative.campaign_id, "Campaign")
     if campaign.advertiser_id != advertiser_id:
         raise HTTPException(status_code=403, detail="Creative does not belong to this advertiser")
 
-    _apply_updates(creative, body)
+    apply_updates(creative, body)
     await session.flush()
     await session.refresh(creative)
     logger.info("Demand creative updated", creative_id=creative_id)
@@ -802,8 +787,8 @@ async def delete_creative(
     advertiser_id: int = Query(..., description="Your advertiser ID"),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    creative = await _get_or_404(session, Creative, creative_id, "Creative")
-    campaign = await _get_or_404(session, Campaign, creative.campaign_id, "Campaign")
+    creative = await get_or_404(session, Creative, creative_id, "Creative")
+    campaign = await get_or_404(session, Campaign, creative.campaign_id, "Campaign")
     if campaign.advertiser_id != advertiser_id:
         raise HTTPException(status_code=403, detail="Creative does not belong to this advertiser")
     creative.status = ModelStatus.DELETED
@@ -898,8 +883,8 @@ async def delete_targeting(
     advertiser_id: int = Query(..., description="Your advertiser ID"),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    rule = await _get_or_404(session, TargetingRule, rule_id, "Targeting rule")
-    campaign = await _get_or_404(session, Campaign, rule.campaign_id, "Campaign")
+    rule = await get_or_404(session, TargetingRule, rule_id, "Targeting rule")
+    campaign = await get_or_404(session, Campaign, rule.campaign_id, "Campaign")
     if campaign.advertiser_id != advertiser_id:
         raise HTTPException(status_code=403, detail="Targeting rule does not belong to this advertiser")
     await session.delete(rule)
@@ -1006,7 +991,7 @@ async def demand_dashboard(
     advertiser_id: int = Query(..., description="Your advertiser ID"),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    adv = await _get_or_404(session, Advertiser, advertiser_id, "Advertiser")
+    adv = await get_or_404(session, Advertiser, advertiser_id, "Advertiser")
 
     # Get all campaigns
     result = await session.execute(
