@@ -22,6 +22,7 @@ from liteads.ad_server.middleware.metrics import MetricsMiddleware, metrics_endp
 from liteads.ad_server.routers import ad, event, health, openrtb, vast_tag
 from liteads.ad_server.routers import admin as admin_router
 from liteads.ad_server.routers import analytics as analytics_router
+from liteads.ad_server.routers import auth as auth_router
 from liteads.ad_server.routers import demand as demand_router
 from liteads.ad_server.routers import supply_demand as supply_demand_router
 from liteads.common.cache import redis_client
@@ -225,15 +226,37 @@ def create_app() -> FastAPI:
     app.include_router(demand_router.router, prefix="/api/v1/demand", tags=["demand"])
     app.include_router(supply_demand_router.router, prefix="/api/v1/supply-demand", tags=["supply-demand"])
 
+    # ── Authentication (Adtelligent-style Bearer token) ──────────
+    # POST /api/v1/token  – same path convention as Adtelligent /v1/token
+    app.include_router(auth_router.router, prefix="/api/v1/token", tags=["auth"])
+
+    # ── Adtelligent-compatible route aliases ────────────────────
+    # Adtelligent SSP uses /v1/channels for supply inventory and
+    # /v1/sources for demand endpoints.  These aliases keep full
+    # API compatibility with Adtelligent-style integrations while
+    # the canonical paths remain at /api/v1/supply-demand/*.
+    app.include_router(
+        supply_demand_router.router,
+        prefix="/api/v1/channels",
+        tags=["channels"],
+        include_in_schema=False,   # hide duplicates from OpenAPI docs
+    )
+    app.include_router(
+        supply_demand_router.router,
+        prefix="/api/v1/sources",
+        tags=["sources"],
+        include_in_schema=False,
+    )
+
     # ── Admin Dashboard UI (with login auth) ───────────────────
     _static_dir = Path(__file__).resolve().parent / "static"
 
-    # Dashboard credentials
-    _DASH_USER = "admin"
-    _DASH_PASS = "Dewa@123"
-    _DASH_SECRET = "liteads-dashboard-session-key-viadsmedia-2026"
+    # Dashboard credentials (configurable via LITEADS_DASHBOARD__* env vars)
+    _DASH_USER = settings.dashboard.username
+    _DASH_PASS = settings.dashboard.password
+    _DASH_SECRET = settings.dashboard.secret_key
     _COOKIE_NAME = "liteads_session"
-    _COOKIE_MAX_AGE = 86400 * 7  # 7 days
+    _COOKIE_MAX_AGE = settings.dashboard.session_max_age
 
     def _make_session_token(username: str) -> str:
         """Create an HMAC-signed session token."""
