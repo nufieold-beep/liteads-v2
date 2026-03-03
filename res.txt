@@ -1,0 +1,5 @@
+DB Impressions Total:
+count 
+-------
+     0
+(1 row)
