@@ -14,7 +14,6 @@ import torch
 
 from liteads.common.logger import get_logger
 from liteads.ml_engine.features.config import (
-    FeatureConfig,
     FeaturesConfigLoader,
     FeaturesConfigSchema,
 )

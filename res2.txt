@@ -1,7 +1,0 @@
-Impressions last 5m:
-INFO:     172.19.0.7:51986 - "GET /api/v1/event/track?type=impression&req=f9f3bdfcfcc24fb697f011bdd06eb24d&ad=ad_0_2130423275&env=ctv&src=viadsmedia.com&dom=genesis.com&bnd=com.roku.nhl&cc=US&bp=3.073 HTTP/1.1" 200 OK
-INFO:     172.19.0.7:48242 - "GET /api/v1/event/track?type=impression&req=7b74f94e30b74c79b9154317db87e7ee&ad=ad_0_1791386464&env=ctv&src=viadsmedia.com&dom=gamblingsignsla.org&bnd=B007FIJ9EI&cc=US&bp=3.207 HTTP/1.1" 200 OK
-INFO:     172.19.0.7:51888 - "GET /api/v1/event/track?type=impression&req=5cf0102395a946e49f4e80b1e07e41c7&ad=ad_0_1442671154&env=ctv&src=viadsmedia.com&dom=callbryant.com&bnd=com.sling.bet.ctv.android.tv&cc=US&bp=3.181 HTTP/1.1" 200 OK
-INFO:     172.19.0.7:52890 - "GET /api/v1/event/track?type=impression&req=a607a022387243a0b1fb3394def6cc31&ad=ad_0_1801147576&env=ctv&src=viadsmedia.com&dom=solarenergyworld.com&bnd=B017JF3EXS&cc=US&bp=4.174 HTTP/1.1" 200 OK
-INFO:     172.19.0.7:45942 - "GET /api/v1/event/track?type=impression&req=0e2dbc8324b045f5ac5aa48ad3b8b77b&ad=ad_0_1958736837&env=ctv&src=viadsmedia.com&dom=honda.com&bnd=com.sling.bet.ctv.android.tv&cc=US&bp=4.761 HTTP/1.1" 200 OK
-INFO:     172.19.0.7:45312 - "GET /api/v1/event/track?type=impression&req=e1e68920dd664bb7a193273c9c7763b4&ad=ad_0_1033417520&env=ctv&src=viadsmedia.com&dom=genesis.com&bnd=com.roku.nhl&cc=US&bp=3.075 HTTP/1.1" 200 OK

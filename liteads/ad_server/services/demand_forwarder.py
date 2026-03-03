@@ -62,7 +62,7 @@ from liteads.schemas.openrtb import (
     Video as OrtbVideo,
 )
 from liteads.schemas.request import AdRequest
-from liteads.common.geoip import geoip_to_ortb_geo, lookup as geoip_lookup, _to_alpha3
+from liteads.common.geoip import geoip_to_ortb_geo, _to_alpha3
 from liteads.common.ortb_enricher import enrich_bid_request as _enrich_ortb
 from liteads.common.utils import csv_ints, csv_strs
 

@@ -42,21 +42,15 @@ from liteads.common.device import (
     infer_os_from_ua,
     map_placement,
 )
-from liteads.common.geoip import geoip_to_geo_info, lookup as geoip_lookup
+from liteads.common.geoip import geoip_to_geo_info
 from liteads.common.logger import get_logger, log_context
 from liteads.common.tracking import (
-    TrackingBundle,
     build_ad_id,
     build_all_tracking,
     build_burl,
     build_demand_extra_params,
-    build_error_url,
-    build_impression_url,
     build_nurl,
-    build_tracking_events,
-    empty_vast_headers,
     empty_vast_response,
-    empty_vast_xml,
 )
 from liteads.common.utils import extract_client_ip, generate_request_id
 from liteads.common.vast import TrackingEvent

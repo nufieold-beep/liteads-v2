@@ -62,12 +62,10 @@ from liteads.common.database import get_session
 from liteads.common.logger import get_logger
 from liteads.common.orm_utils import apply_updates, get_or_404
 from liteads.models import (
-    AdEvent,
     Advertiser,
     Campaign,
     Creative,
     HourlyStat,
-    EventType,
     Status as ModelStatus,
     TargetingRule,
 )

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import redis.asyncio as redis
 from redis.asyncio import ConnectionPool, Redis
 
 from liteads.common.config import get_settings

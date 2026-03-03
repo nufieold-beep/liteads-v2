@@ -7,7 +7,7 @@ ad.py, vast_tag.py, and openrtb_service.py (3-4 copies each).
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import NamedTuple
 from urllib.parse import urlencode
 
 from liteads.common.vast import TrackingEvent

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from liteads.common.cache import CacheKeys, redis_client
 from liteads.common.logger import get_logger
 from liteads.common.utils import json_dumps, json_loads
-from liteads.models import Campaign, Creative, Status, TargetingRule
+from liteads.models import Campaign, Status
 from liteads.rec_engine.retrieval.base import BaseRetrieval
 from liteads.schemas.internal import AdCandidate, UserContext
 

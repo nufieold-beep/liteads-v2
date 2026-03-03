@@ -14,8 +14,6 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import redis.asyncio as redis
-from redis.exceptions import RedisError
 
 from liteads.common.cache import CacheKeys, redis_client
 from liteads.common.logger import get_logger
