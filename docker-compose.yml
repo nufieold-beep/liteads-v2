@@ -6,6 +6,8 @@ services:
       dockerfile: deployment/docker/Dockerfile
     ports:
       - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro
     environment:
       - LITEADS_ENV=prod
       - LITEADS_DATABASE__HOST=postgres
@@ -15,6 +17,7 @@ services:
       - LITEADS_DATABASE__PASSWORD=liteads_password
       - LITEADS_REDIS__HOST=redis
       - LITEADS_REDIS__PORT=6379
+      - GEOIP_DB_PATH=/app/data/GeoLite2-City.mmdb
     depends_on:
       postgres:
         condition: service_healthy
