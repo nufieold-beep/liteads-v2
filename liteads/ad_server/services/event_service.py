@@ -276,14 +276,25 @@ class EventService:
         try:
             parts = ad_id.split("_")
             if len(parts) >= 3:
-                cid = int(parts[1])
-                crid = int(parts[2])
+                cid_str, crid_str = parts[1], parts[2]
+                try:
+                    cid = int(cid_str)
+                except ValueError:
+                    return None, None
+                try:
+                    crid = int(crid_str)
+                except ValueError:
+                    crid = None  # Fallback to None if DSP gave us a string/hex ID
                 return cid if cid >= 0 else None, crid
             elif len(parts) >= 2:
                 cid = int(parts[1])
                 return cid if cid >= 0 else None, None
             else:
-                return int(ad_id), None
+                try:
+                    return int(ad_id), None
+                except ValueError:
+                    # If it's pure string like DSP ad_id without 'ad_0_', default to 0 for DSP analytics
+                    return 0, None  
         except (ValueError, IndexError):
             logger.warning(f"Invalid ad_id format: {ad_id}")
             return None, None

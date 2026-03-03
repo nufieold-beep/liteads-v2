@@ -549,10 +549,8 @@ async def vast_tag(
                 request_id=request_id,
             )
             return _empty_vast_response(request_id)
-        if _parsed["ad_id"]:
-            ad_id = _parsed["ad_id"]
-        if _parsed["creative_id"]:
-            ad_id = f"ad_{candidate.campaign_id}_{_parsed['creative_id']}"
+        # Note: We do NOT override ad_id with DSP string IDs here, because 
+        # our event tracker requires ad_id to be parsable as ad_{camp}_{hash_int}.
 
     _adomain_list = _meta.get("adomain") or []
     _adomain = _adomain_list[0] if _adomain_list else ""
