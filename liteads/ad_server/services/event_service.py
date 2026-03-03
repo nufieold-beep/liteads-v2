@@ -283,6 +283,8 @@ class EventService:
                     return None, None
                 try:
                     crid = int(crid_str)
+                    if cid == 0:
+                        crid = None  # DB still has FK constraints for creative_id!
                 except ValueError:
                     crid = None  # Fallback to None if DSP gave us a string/hex ID
                 return cid if cid >= 0 else None, crid
