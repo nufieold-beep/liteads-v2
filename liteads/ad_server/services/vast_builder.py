@@ -79,7 +79,6 @@ def build_vast_for_candidate(
     """
     if candidate.vast_url:
         # Wrapper – external VAST tag (demand/DSP).
-        # Omit <Impression> to avoid double-fire with the downstream VAST.
         click_tracking_url = build_click_tracking_url(
             base_url, request_id, ad_id, env,
         )
@@ -89,7 +88,7 @@ def build_vast_for_candidate(
             creative_id=str(candidate.creative_id),
             vast_tag_uri=candidate.vast_url,
             ad_title=candidate.title or "Video Ad",
-            impression_urls=[],  # no impression — avoid double-fire
+            impression_urls=[impression_url],  # Include impression to count wrapper delivery
             error_urls=[error_url],
             tracking_events=tracking_events,
             click_tracking=[click_tracking_url],

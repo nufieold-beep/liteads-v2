@@ -406,12 +406,6 @@ class OpenRTBService:
             vast_version = self._settings.vast.supported_versions[-1]
 
             # Choose InLine vs Wrapper based on creative type.
-            #
-            # CTV double-impression prevention:
-            # - Wrappers must NOT carry our <Impression> because the
-            #   downstream VAST already has its own; two would double-fire.
-            # - InLine is only emitted when the candidate has a real
-            #   video_url (i.e. a <MediaFile> will exist in the VAST).
             # nurl/burl are carried in the Bid object (not the VAST XML)
             # for OpenRTB, so they are not passed here.
             vast_xml = build_vast_for_candidate(
