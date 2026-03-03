@@ -28,6 +28,7 @@ from liteads.schemas.openrtb import (
     Regs as OrtbRegs,
     Source as OrtbSource,
     Video as OrtbVideo,
+    Content as OrtbContent,
 )
 
 logger = get_logger(__name__)
@@ -181,6 +182,15 @@ def enrich_bid_request(
             dev.connectiontype = 1 if env == "ctv" else 2
             enriched_fields.append("device.connectiontype")
 
+        # Generate basic SUA for CTV if missing (DSP anti-fraud requirement)
+        if _is_ctv and not dev.sua:
+            dev.sua = {
+                "browsers": [],
+                "platform": {"brand": dev.os or "CTV", "version": dev.osv or "1.0"},
+                "mobile": 0
+            }
+            enriched_fields.append("device.sua (created)")
+
     # ── 4. Geo auto-enrichment from MaxMind ───────────────────────────
     _enrich_geo(br, enriched_fields)
 
@@ -191,6 +201,7 @@ def enrich_bid_request(
             name="APP_NAME",
             bundle="com.example.ctv",
             publisher=OrtbPublisher(id=slot_id or "PUB_ID"),
+            content=OrtbContent(livestream=0, language="en") if _is_ctv else None,
         )
         enriched_fields.append("app (created)")
     else:
@@ -203,6 +214,11 @@ def enrich_bid_request(
         if app.publisher is None:
             app.publisher = OrtbPublisher(id=slot_id or "PUB_ID")
             enriched_fields.append("app.publisher (created)")
+
+        # Content for CTV
+        if _is_ctv and app.content is None:
+            app.content = OrtbContent(livestream=0, language=getattr(br.device, "language", "en") or "en")
+            enriched_fields.append("app.content (created)")
 
     # ── 6. Source — only fill fd/tid if completely missing ─────────────
     if br.source is None:

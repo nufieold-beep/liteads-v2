@@ -16,6 +16,7 @@ Adtelligent, Project Limelight, DoubleVerify, and other exchanges.
 from __future__ import annotations
 
 import base64
+import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +70,15 @@ def _parse_price(raw: str | None) -> float:
     try:
         return float(raw)
     except ValueError:
+        # Fallback for prices with currencies (e.g., 1.50USD, USD1.50)
+        # Avoids accidentally parsing base64 crypt strings as floats
+        if len(raw) < 15:
+            match = re.search(r'^\D{0,3}(\d+\.\d+|\d+)\D{0,3}$', raw.strip())
+            if match:
+                try:
+                    return float(match.group(1))
+                except ValueError:
+                    pass
         return 0.0
 
 

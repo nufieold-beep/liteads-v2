@@ -137,9 +137,8 @@ def _strip_empty(obj: object) -> None:
 # device.devicetype, app.bundle, video core fields, pod fields).
 _SLIM_VIDEO_KEYS = {
     "skipmin", "skipafter", "maxextended",
-    "pos", "companiontype", "playbackend", "minbitrate", "maxbitrate",
+    "companiontype", "playbackend", "minbitrate", "maxbitrate",
     "battr", "companionad", "ext",
-    "plcmt", "playbackmethod", "delivery",  # not in target SSP format
 }
 _SLIM_IMP_KEYS = {
     "metric", "rwdd", "displaymanager", "displaymanagerver",
