@@ -23,14 +23,11 @@ from liteads.common.device import (
 from liteads.common.logger import get_logger
 from liteads.common.tracking import (
     build_ad_id,
+    build_all_tracking,
     build_burl,
-    build_error_url,
-    build_impression_url,
     build_lurl,
     build_nurl,
-    build_tracking_events,
 )
-from liteads.common.vast import TrackingEvent
 from liteads.schemas.openrtb import (
     Bid,
     BidRequest,
@@ -398,14 +395,7 @@ class OpenRTBService:
             ad_id = build_ad_id(candidate.campaign_id, candidate.creative_id)
 
             # Build VAST XML (adm)
-            tracking_events = build_tracking_events(
-                base_url, request_id, ad_id, env,
-            )
-
-            impression_url = build_impression_url(
-                base_url, request_id, ad_id, env,
-            )
-            error_url = build_error_url(
+            trk = build_all_tracking(
                 base_url, request_id, ad_id, env,
             )
 
@@ -424,9 +414,9 @@ class OpenRTBService:
                 candidate,
                 vast_version=vast_version,
                 ad_id=ad_id,
-                tracking_events=tracking_events,
-                impression_url=impression_url,
-                error_url=error_url,
+                tracking_events=trk.events,
+                impression_url=trk.impression_url,
+                error_url=trk.error_url,
                 base_url=base_url,
                 request_id=request_id,
                 env=env,

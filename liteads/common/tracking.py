@@ -7,10 +7,18 @@ ad.py, vast_tag.py, and openrtb_service.py (3-4 copies each).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlencode
 
 from liteads.common.vast import TrackingEvent
+
+
+class TrackingBundle(NamedTuple):
+    """Pre-built set of VAST tracking URLs for a single ad candidate."""
+
+    events: list[TrackingEvent]
+    impression_url: str
+    error_url: str
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +105,25 @@ def build_error_url(
     """Build the VAST error pixel URL."""
     return build_tracking_event_url(
         base_url, "error", request_id, ad_id, env, extra_params,
+    )
+
+
+def build_all_tracking(
+    base_url: str,
+    request_id: str,
+    ad_id: str,
+    env: str,
+    extra_params: str = "",
+) -> TrackingBundle:
+    """Build the full tracking-URL quintet in one call.
+
+    Returns a ``TrackingBundle(events, impression_url, error_url)``
+    so callers don't need to repeat three near-identical invocations.
+    """
+    return TrackingBundle(
+        events=build_tracking_events(base_url, request_id, ad_id, env, extra_params),
+        impression_url=build_impression_url(base_url, request_id, ad_id, env, extra_params),
+        error_url=build_error_url(base_url, request_id, ad_id, env, extra_params),
     )
 
 
@@ -214,3 +241,25 @@ def empty_vast_headers(request_id: str = "") -> dict[str, str]:
     if request_id:
         headers["X-Request-ID"] = request_id
     return headers
+
+
+def empty_vast_response(request_id: str = "") -> "Response":
+    """Return an HTTP 200 Response with an empty VAST document (no fill).
+
+    Per VAST spec, return HTTP 200 with an empty VAST element — not 204.
+    This is critical for SSP/exchange compatibility.
+
+    Lazily imports ``fastapi.responses.Response`` to avoid pulling FastAPI
+    into pure-utility code that doesn't otherwise need it.
+    """
+    from fastapi.responses import Response
+
+    headers = empty_vast_headers(request_id)
+    headers["Pragma"] = "no-cache"
+    headers["Access-Control-Allow-Origin"] = "*"
+    return Response(
+        content=empty_vast_xml(),
+        media_type="application/xml",
+        status_code=200,
+        headers=headers,
+    )

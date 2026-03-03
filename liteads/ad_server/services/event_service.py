@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from liteads.common.cache import CacheKeys, redis_client
 from liteads.common.logger import get_logger
-from liteads.common.utils import current_date, current_hour
+from liteads.common.utils import ENV_TO_INT, current_date, current_hour
 from liteads.models import AdEvent, Campaign, EventType
 from liteads.ad_server.middleware.metrics import (
     record_ad_completion,
@@ -120,16 +120,13 @@ class EventService:
                 logger.warning(f"Unknown video event type: {event_type}")
                 return False
 
-            # Resolve environment to int (needed by dedup path too)
-            env_int = None
-            if environment == "ctv":
-                env_int = 1
-            elif environment == "inapp":
-                env_int = 2
+            # Resolve environment to int (shared mapping)
+            env_int = ENV_TO_INT.get(environment) if environment else None
 
             # ---- Impression deduplication ----
             # Prevent double-billing when both burl and VAST pixel fire
             # for the same (request_id, campaign_id) pair.
+            is_dedup = False
             if event_type_enum == EventType.IMPRESSION and campaign_id is not None:
                 dedup_key = f"imp_dedup:{request_id}:{campaign_id}"
                 is_new = await redis_client.set(
@@ -145,32 +142,11 @@ class EventService:
                         request_id=request_id,
                         campaign_id=campaign_id,
                     )
-                    event = AdEvent(
-                        request_id=request_id,
-                        campaign_id=campaign_id,
-                        creative_id=creative_id,
-                        event_type=event_type_enum,
-                        event_time=datetime.fromtimestamp(timestamp, tz=timezone.utc)
-                        if timestamp
-                        else datetime.now(timezone.utc),
-                        user_id=user_id,
-                        ip_address=ip_address,
-                        cost=Decimal("0.000000"),
-                        win_price=Decimal(str(round(win_price, 6))) if win_price else Decimal("0"),
-                        adomain=adomain,
-                        source_name=source_name,
-                        bundle_id=bundle_id,
-                        country_code=country_code,
-                        video_position=video_position,
-                        environment=env_int,
-                    )
-                    self.session.add(event)
-                    await self.session.flush()
-                    return True
+                    is_dedup = True
 
-            # Calculate CPM cost on impression
-            cost = Decimal("0.000000")
-            if event_type_enum == EventType.IMPRESSION and campaign_id is not None:
+            # Calculate CPM cost on impression (skip for deduplicated events)
+            cost = _DECIMAL_ZERO
+            if not is_dedup and event_type_enum == EventType.IMPRESSION and campaign_id is not None:
                 if campaign_id > 0:
                     # Local campaign — look up CPM from DB
                     cost = await self._calculate_cpm_cost(campaign_id)
@@ -178,6 +154,7 @@ class EventService:
                     # Demand fill — cost = bid_price / 1000 (CPM → per-impression)
                     cost = Decimal(str(round(win_price / 1000, 6)))
 
+            # Build & persist AdEvent (single construction for both paths)
             event = AdEvent(
                 request_id=request_id,
                 campaign_id=campaign_id,
@@ -197,9 +174,11 @@ class EventService:
                 video_position=video_position,
                 environment=env_int,
             )
-
             self.session.add(event)
             await self.session.flush()
+
+            if is_dedup:
+                return True
 
             # ── Batch all Redis updates into a single pipeline ─────
             # Previously 3-5 separate round-trips; now 1.

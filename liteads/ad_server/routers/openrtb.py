@@ -73,6 +73,7 @@ async def openrtb_bid(
     openrtb_service: OpenRTBService = Depends(_get_openrtb_service),
     x_openrtb_version: str | None = Header(None, alias="X-OpenRTB-Version"),
     x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: str | None = Header(None, alias="X-Real-IP"),
     user_agent: str | None = Header(None, alias="User-Agent"),
 ) -> Response:
     """
@@ -109,7 +110,7 @@ async def openrtb_bid(
     start_time = time.monotonic()
 
     # ---- Log & enrich from HTTP headers ----
-    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
+    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None, x_real_ip)
 
     logger.info(
         "OpenRTB bid request received",

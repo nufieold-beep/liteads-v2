@@ -137,6 +137,7 @@ async def track_event_get(
     cc: str | None = Query(None, description="Country code"),
     bp: str | None = Query(None, description="Bid price (CPM)"),
     x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: str | None = Header(None, alias="X-Real-IP"),
     event_service: EventService = Depends(get_event_service),
 ) -> Response:
     """
@@ -159,7 +160,7 @@ async def track_event_get(
     if err and err != "[ERRORCODE]":
         extra = {"error_code": err}
 
-    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
+    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None, x_real_ip)
 
     # Parse bid price from tracking param
     _win_price = 0.0
@@ -202,6 +203,7 @@ async def win_notification(
     price: str = Query("0", description="Auction clearing price (CPM)"),
     env: str = Query("ctv", description="Environment (ctv/inapp)"),
     x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: str | None = Header(None, alias="X-Real-IP"),
     event_service: EventService = Depends(get_event_service),
 ) -> Response:
     """
@@ -225,7 +227,7 @@ async def win_notification(
         environment=env,
     )
 
-    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
+    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None, x_real_ip)
 
     background_tasks.add_task(
         event_service.track_event,
@@ -254,6 +256,7 @@ async def loss_notification(
     price: str = Query("0", description="Clearing price that won (CPM)"),
     env: str = Query("ctv", description="Environment (ctv/inapp)"),
     x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: str | None = Header(None, alias="X-Real-IP"),
     event_service: EventService = Depends(get_event_service),
 ) -> Response:
     """
@@ -290,7 +293,7 @@ async def loss_notification(
         environment=env,
     )
 
-    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
+    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None, x_real_ip)
 
     background_tasks.add_task(
         event_service.track_event,
@@ -321,6 +324,7 @@ async def billing_notification(
     price: str = Query("0", description="Billable price (CPM)"),
     env: str = Query("ctv", description="Environment (ctv/inapp)"),
     x_forwarded_for: str | None = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: str | None = Header(None, alias="X-Real-IP"),
     event_service: EventService = Depends(get_event_service),
 ) -> Response:
     """
@@ -341,7 +345,7 @@ async def billing_notification(
         environment=env,
     )
 
-    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
+    client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None, x_real_ip)
 
     background_tasks.add_task(
         event_service.track_event,

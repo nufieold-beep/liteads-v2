@@ -16,8 +16,8 @@ from liteads.common.tracking import (
     build_ad_id,
     build_burl,
     build_nurl,
-    empty_vast_headers,
-    empty_vast_xml,
+    build_tracking_event_url,
+    empty_vast_response,
 )
 from liteads.common.utils import generate_request_id
 from liteads.schemas.request import AdRequest
@@ -45,10 +45,9 @@ def _build_tracking_urls(
 ) -> VideoTrackingUrls:
     """Build VAST-standard video tracking URLs.
 
-    Delegates to ``common.tracking`` for the URL template so the pattern
-    lives in one place.
+    Delegates to the canonical ``build_tracking_event_url`` in
+    ``common.tracking`` so that URL format is defined in one place.
     """
-    from liteads.common.tracking import build_tracking_event_url
 
     def _url(event_type: str) -> str:
         return build_tracking_event_url(
@@ -224,9 +223,4 @@ async def get_vast_xml(
         ad_id=ad_id,
     )
 
-    return Response(
-        content=empty_vast_xml(),
-        media_type="application/xml",
-        status_code=200,
-        headers=empty_vast_headers(request_id),
-    )
+    return empty_vast_response(request_id)

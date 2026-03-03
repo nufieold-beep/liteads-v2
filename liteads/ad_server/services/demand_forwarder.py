@@ -32,6 +32,7 @@ from typing import Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
+import orjson
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -60,8 +61,9 @@ from liteads.schemas.openrtb import (
     Video as OrtbVideo,
 )
 from liteads.schemas.request import AdRequest
-from liteads.common.geoip import lookup as geoip_lookup, _to_alpha3
+from liteads.common.geoip import geoip_to_ortb_geo, lookup as geoip_lookup, _to_alpha3
 from liteads.common.ortb_enricher import enrich_bid_request as _enrich_ortb
+from liteads.common.utils import csv_ints, csv_strs
 
 logger = get_logger(__name__)
 
@@ -104,25 +106,29 @@ _RE_ROKU_VER = re.compile(r'DVP-(\d+[\.\d]*)')
 _RE_MACRO_TOKEN = re.compile(r'\$?\{([^}]+)\}')
 
 
-def _strip_empty(obj: object, _key: str = "") -> object:
-    """Recursively strip empty lists/dicts from a JSON-serialisable object.
+def _strip_empty(obj: object) -> None:
+    """Recursively strip empty lists/dicts from a JSON-serialisable object **in-place**.
+
+    Mutates *obj* directly instead of creating a new dict/list tree,
+    avoiding O(n) allocation on every request.
 
     Preserves empty values for keys listed in ``_KEEP_EMPTY`` because DSPs
     interpret their presence (e.g. ``api: []`` means *no* API support).
     """
     if isinstance(obj, dict):
-        return {
-            k: _strip_empty(v, k)
-            for k, v in obj.items()
-            if not (
-                isinstance(v, (list, dict))
-                and len(v) == 0
-                and k not in _KEEP_EMPTY
-            )
-        }
-    if isinstance(obj, list):
-        return [_strip_empty(i) for i in obj]
-    return obj
+        to_del = [
+            k for k, v in obj.items()
+            if isinstance(v, (list, dict)) and len(v) == 0 and k not in _KEEP_EMPTY
+        ]
+        for k in to_del:
+            del obj[k]
+        for v in obj.values():
+            if isinstance(v, (dict, list)):
+                _strip_empty(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, (dict, list)):
+                _strip_empty(item)
 
 
 # Fields to strip from the ORTB payload to reduce size / DSP parse time.
@@ -457,11 +463,11 @@ class DemandForwarder:
 
         bid_payload = bid_request.model_dump(exclude_none=True)
 
-        # Strip empty lists/dicts for cleaner payload (DSPs don't need them)
-        bid_payload = _strip_empty(bid_payload)
+        # Strip empty lists/dicts in-place for cleaner payload (DSPs don't need them)
+        _strip_empty(bid_payload)
 
         # Slim down payload for faster DSP response (0.2s vs 1.3-2.5s)
-        bid_payload = _slim_payload(bid_payload)
+        _slim_payload(bid_payload)
 
         # ── Build headers ──
         device_ua = bid_payload.get("device", {}).get("ua", "")
@@ -478,45 +484,38 @@ class DemandForwarder:
             fwd_headers["X-Forwarded-For"] = device_ip
 
         # ── Log request details ──
+        # ── Log request (essential fields at INFO, verbose at DEBUG) ──
         _app = bid_payload.get("app", {})
-        _dev = bid_payload.get("device", {})
-        _geo = _dev.get("geo", {})
-        _src = bid_payload.get("source", {})
-        _usr = bid_payload.get("user", {})
         logger.info(
             "Sending ORTB bid request",
             request_id=request_id,
             endpoint=endpoint.name,
-            url=endpoint.endpoint_url,
             timeout_ms=effective_timeout_ms,
             ortb_bundle=_app.get("bundle"),
-            ortb_app_name=_app.get("name"),
-            ortb_app_id=_app.get("id"),
-            ortb_domain=_app.get("domain"),
-            ortb_storeurl=_app.get("storeurl"),
-            ortb_ua=_dev.get("ua", "")[:80],
-            ortb_ip=_dev.get("ip"),
-            ortb_ifa=_dev.get("ifa"),
-            ortb_devicetype=_dev.get("devicetype"),
-            ortb_os=_dev.get("os"),
-            ortb_make=_dev.get("make"),
-            ortb_model=_dev.get("model"),
-            ortb_country=_geo.get("country"),
-            has_source=bool(_src),
-            has_schain=bool(_src.get("schain")),
-            source_tid=_src.get("tid"),
-            has_user_id=bool(_usr.get("id")),
-            has_user_eids=bool(_usr.get("eids")),
-            has_regs=bool(bid_payload.get("regs")),
         )
+        if logger.isEnabledFor(10):  # 10 = DEBUG
+            _dev = bid_payload.get("device", {})
+            _geo = _dev.get("geo", {})
+            logger.debug(
+                "ORTB request detail",
+                request_id=request_id,
+                endpoint=endpoint.name,
+                url=endpoint.endpoint_url,
+                ortb_app_name=_app.get("name"),
+                ortb_ua=_dev.get("ua", "")[:80],
+                ortb_ip=_dev.get("ip"),
+                ortb_ifa=_dev.get("ifa"),
+                ortb_devicetype=_dev.get("devicetype"),
+                ortb_os=_dev.get("os"),
+                ortb_country=_geo.get("country"),
+            )
 
         # ── Debug: log full ORTB payload (truncated to avoid log bloat) ──
         # Guard behind log-level check so orjson.dumps is not called
         # on every request when debug logging is disabled (~0.3ms saved).
         if logger.isEnabledFor(10):  # 10 = DEBUG
             try:
-                import orjson as _orjson
-                _payload_bytes = _orjson.dumps(bid_payload)
+                _payload_bytes = orjson.dumps(bid_payload)
                 logger.debug(
                     "ORTB payload",
                     request_id=request_id,
@@ -525,6 +524,9 @@ class DemandForwarder:
                 )
             except Exception:
                 pass
+
+        # Pre-serialise with orjson (5-10x faster than stdlib json used by httpx)
+        bid_bytes = orjson.dumps(bid_payload)
 
         # ── Send request with retry on transient failures ──
         last_error: Exception | None = None
@@ -544,7 +546,7 @@ class DemandForwarder:
                 client = _get_http_client()
                 response = await client.post(
                     endpoint.endpoint_url,
-                    json=bid_payload,
+                    content=bid_bytes,
                     headers=fwd_headers,
                     timeout=request_timeout,
                 )
@@ -595,7 +597,9 @@ class DemandForwarder:
                     return []  # Non-retryable (4xx)
 
                 # ── Parse bid response ──
-                bid_response = BidResponse.model_validate_json(response.text)
+                # Use response.content (bytes) — avoids bytes→str decode
+                # that response.text would do before Pydantic re-parses.
+                bid_response = BidResponse.model_validate_json(response.content)
                 candidates = self._extract_candidates(
                     bid_response=bid_response,
                     endpoint=endpoint,
@@ -802,28 +806,6 @@ class DemandForwarder:
 
         is_ctv = ad_request.environment == "ctv"
 
-        # ─────────────────────────────────────────────────────────────
-        # Helpers – parse comma-separated values from publisher params
-        # ─────────────────────────────────────────────────────────────
-
-        def _csv_ints(val: str | None) -> list[int]:
-            if not val:
-                return []
-            out: list[int] = []
-            for p in val.split(","):
-                p = p.strip()
-                if p:
-                    try:
-                        out.append(int(p))
-                    except ValueError:
-                        pass
-            return out
-
-        def _csv_strs(val: str | None) -> list[str]:
-            if not val:
-                return []
-            return [s.strip() for s in val.split(",") if s.strip()]
-
         v = ad_request.video if ad_request.video else None
 
         # ══════════════════════════════════════════════════════════════
@@ -844,7 +826,7 @@ class DemandForwarder:
 
         # ── protocols (§5.8): VAST versions supported
         # CTV players universally accept VAST 2/3/4.x; in-app may also support VPAID
-        vid_protocols = _csv_ints(v.video_protocols if v else None)
+        vid_protocols = csv_ints(v.video_protocols if v else None)
         if not vid_protocols:
             # 2=VAST2.0, 3=VAST3.0, 4=VAST2.0-Wrapper, 5=VAST3.0-Wrapper,
             # 6=VAST4.0, 7=VAST4.1, 8=VAST4.2
@@ -879,12 +861,12 @@ class DemandForwarder:
         # ── playbackmethod (§5.10):
         #    CTV: 1=Page-load sound-on (auto-play with sound)
         #    In-app: may use 2=on-click, 5=auto-play-viewport-sound-on
-        playback = _csv_ints(v.playbackmethod if v else None)
+        playback = csv_ints(v.playbackmethod if v else None)
         if not playback:
             playback = [1] if is_ctv else [1, 5]
 
         # ── delivery (§5.15): 1=Streaming, 2=Progressive, 3=Download
-        delivery = _csv_ints(v.delivery if v else None) or [2, 1]
+        delivery = csv_ints(v.delivery if v else None) or [2, 1]
 
         # ── Video dimensions / durations
         width = v.width if v and v.width else supply_tag.width or 1920
@@ -916,7 +898,7 @@ class DemandForwarder:
             maxseq=v.max_ads_in_pod if v and v.max_ads_in_pod else None,
             podid=v.podid if v and v.podid else None,
             podseq=v.podseq if v else None,
-            poddedupe=_csv_ints(v.poddedupe if v else None) or [],
+            poddedupe=csv_ints(v.poddedupe if v else None) or [],
         )
 
         # ══════════════════════════════════════════════════════════════
@@ -953,34 +935,17 @@ class DemandForwarder:
             # Always do a MaxMind lookup so we have full geo (lat, lon,
             # region, metro, city, zip, accuracy) even when publisher
             # only sends country_code.  DSPs use these for targeting.
-            geo = None
             _dev_ip = d.ip or ""
 
-            # MaxMind lookup (provides full geo)
-            _maxmind_geo = None
-            if _dev_ip:
-                _g = geoip_lookup(_dev_ip)
-                if _g and _g.country:
-                    _maxmind_geo = _g
+            # MaxMind lookup → OrtbGeo (shared factory in geoip.py)
+            geo = geoip_to_ortb_geo(_dev_ip) if _dev_ip else None
 
-            if _maxmind_geo:
-                # Prefer publisher-provided country over MaxMind,
-                # but fill all other fields from MaxMind
-                pub_country = ""
+            if geo:
+                # Prefer publisher-provided country over MaxMind
                 if ad_request.geo and ad_request.geo.country:
                     pub_country = _to_alpha3(ad_request.geo.country)
-                geo = OrtbGeo(
-                    country=pub_country or _maxmind_geo.country,
-                    region=_maxmind_geo.region,
-                    city=_maxmind_geo.city,
-                    metro=_maxmind_geo.metro,
-                    lat=_maxmind_geo.lat,
-                    lon=_maxmind_geo.lon,
-                    zip=_maxmind_geo.zip,
-                    type=2,                        # 2 = IP-based
-                    accuracy=_maxmind_geo.accuracy,  # accuracy radius
-                    ipservice=3,                   # 3 = MaxMind
-                )
+                    if pub_country:
+                        geo.country = pub_country
             elif ad_request.geo and ad_request.geo.country:
                 # No MaxMind available — use publisher geo only
                 g = ad_request.geo
@@ -1130,9 +1095,9 @@ class DemandForwarder:
             publisher_id = a.publisher_id or ""
             inv_partner_domain = a.inventory_partner_domain or ""
             if a.app_category:
-                cat = _csv_strs(a.app_category)
+                cat = csv_strs(a.app_category)
             if a.page_categories:
-                pagecat = _csv_strs(a.page_categories)
+                pagecat = csv_strs(a.page_categories)
 
         # Fallbacks – use publisher data first; only use generic
         # identifiers when publisher sent nothing.  NEVER leak internal
@@ -1188,8 +1153,8 @@ class DemandForwarder:
                         qag_val = int(a.qag_media_rating)
                     except (ValueError, TypeError):
                         pass
-                content_cat = _csv_strs(a.content_categories)
-                content_genres = _csv_strs(a.content_genres)
+                content_cat = csv_strs(a.content_categories)
+                content_genres = csv_strs(a.content_genres)
 
                 content = OrtbContent(
                     id=a.content_id or None,
@@ -1314,8 +1279,8 @@ class DemandForwarder:
         # 8. BLOCKED SIGNALS (Section 3.2.1)
         # ══════════════════════════════════════════════════════════════
 
-        bcat_list = _csv_strs(ad_request.bcat) if ad_request.bcat else ["IAB26"]
-        badv_list = _csv_strs(ad_request.badv) if ad_request.badv else []
+        bcat_list = csv_strs(ad_request.bcat) if ad_request.bcat else ["IAB26"]
+        badv_list = csv_strs(ad_request.badv) if ad_request.badv else []
 
         # ══════════════════════════════════════════════════════════════
         # 9. ASSEMBLE BidRequest  (Section 3.2.1)

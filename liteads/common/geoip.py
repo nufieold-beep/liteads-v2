@@ -175,3 +175,54 @@ _DEFAULT_GEO_RESULT = GeoResult(
 def _defaults() -> GeoResult:
     """Return a ``GeoResult`` filled with safe defaults."""
     return _DEFAULT_GEO_RESULT
+
+
+# ---------------------------------------------------------------------------
+# Schema factory helpers  (avoid 3× inline construction of Pydantic models)
+# ---------------------------------------------------------------------------
+
+def geoip_to_geo_info(ip: str | None) -> "GeoInfo":
+    """Look up *ip* and return a ``GeoInfo`` schema (used by VAST-tag router).
+
+    Lazily imports to avoid circular dependency with ``schemas.request``.
+    """
+    from liteads.schemas.request import GeoInfo
+
+    g = lookup(ip)
+    return GeoInfo(
+        ip=ip or "",
+        country=g.country or None,
+        region=g.region or None,
+        city=g.city or None,
+        dma=g.metro or None,
+        latitude=g.lat,
+        longitude=g.lon,
+        zip_code=g.zip or None,
+        geo_type=g.type,
+        ipservice=g.ipservice,
+    )
+
+
+def geoip_to_ortb_geo(ip: str | None) -> "OrtbGeo | None":
+    """Look up *ip* and return an ``OrtbGeo`` schema (used by demand forwarder / enricher).
+
+    Returns ``None`` when the lookup yields no country (MaxMind DB unavailable
+    or the IP is unknown).
+    """
+    from liteads.schemas.openrtb import Geo as OrtbGeo
+
+    g = lookup(ip)
+    if not g or not g.country:
+        return None
+    return OrtbGeo(
+        country=g.country,
+        region=g.region,
+        city=g.city,
+        metro=g.metro,
+        lat=g.lat,
+        lon=g.lon,
+        zip=g.zip,
+        type=2,           # 2 = IP-based
+        accuracy=g.accuracy,
+        ipservice=3,       # 3 = MaxMind
+    )

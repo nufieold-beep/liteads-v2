@@ -42,10 +42,12 @@ from liteads.common.device import (
     infer_os_from_ua,
     map_placement,
 )
-from liteads.common.geoip import lookup as geoip_lookup
+from liteads.common.geoip import geoip_to_geo_info, lookup as geoip_lookup
 from liteads.common.logger import get_logger, log_context
 from liteads.common.tracking import (
+    TrackingBundle,
     build_ad_id,
+    build_all_tracking,
     build_burl,
     build_demand_extra_params,
     build_error_url,
@@ -53,9 +55,10 @@ from liteads.common.tracking import (
     build_nurl,
     build_tracking_events,
     empty_vast_headers,
+    empty_vast_response,
     empty_vast_xml,
 )
-from liteads.common.utils import generate_request_id
+from liteads.common.utils import extract_client_ip, generate_request_id
 from liteads.common.vast import TrackingEvent
 from liteads.schemas.request import (
     AdRequest,
@@ -79,6 +82,16 @@ _AD_ID_RE = re.compile(r'<Ad[^>]+id=["\']([^"\']+)["\']')
 _CREATIVE_ID_RE = re.compile(r'<Creative[^>]+id=["\']([^"\']+)["\']')
 _MEDIA_FILE_RE = re.compile(r'<MediaFile[\s>]')
 _VAST_TAG_URI_RE = re.compile(r'<VASTAdTagURI')
+
+# Module-level VAST OK response header template — only X-Request-ID and
+# X-LiteAds-Environment vary per request; the other 5 entries are static.
+_VAST_OK_HEADERS: dict[str, str] = {
+    "Content-Type": "application/xml; charset=utf-8",
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -306,15 +319,11 @@ async def vast_tag(
     # Sanitise IP: if it looks like an unresolved macro, use real client IP
     raw_ip = (ip or "").strip()
     if not raw_ip or "{" in raw_ip or "[" in raw_ip or "%7B" in raw_ip.upper():
-        # Behind nginx/proxy: prefer X-Real-IP (set by nginx from $remote_addr,
-        # not spoofable) over X-Forwarded-For (first entry can be forged by clients).
-        _xri = request.headers.get("x-real-ip", "")
-        _xff = request.headers.get("x-forwarded-for", "")
-        raw_ip = (
-            _xri.strip() if _xri
-            else _xff.split(",")[-1].strip() if _xff
-            else (request.client.host if request.client else "")
-        )
+        raw_ip = extract_client_ip(
+            x_forwarded_for=request.headers.get("x-forwarded-for"),
+            request_client_host=request.client.host if request.client else None,
+            x_real_ip=request.headers.get("x-real-ip"),
+        ) or ""
 
     device = DeviceInfo(
         device_type="ctv" if env == "ctv" else "mobile",
@@ -356,19 +365,7 @@ async def vast_tag(
         )
     else:
         # ----- GeoIP enrichment from MaxMind -----
-        g = geoip_lookup(raw_ip)
-        geo = GeoInfo(
-            ip=raw_ip,
-            country=g.country or None,
-            region=g.region or None,
-            city=g.city or None,
-            dma=g.metro or None,
-            latitude=g.lat,
-            longitude=g.lon,
-            zip_code=g.zip or None,
-            geo_type=g.type,
-            ipservice=g.ipservice,
-        )
+        geo = geoip_to_geo_info(raw_ip)
 
     app_info = AppInfo(
         app_name=app_name or ct_chan or None,
@@ -535,6 +532,24 @@ async def vast_tag(
 
     # Build tracking query params with demand source info for analytics
     _meta = candidate.metadata or {}
+    _adm_raw = _meta.get("adm")
+
+    # For adm (DSP inline VAST), parse real Ad/Creative IDs BEFORE building
+    # tracking URLs so we only call build_all_tracking() once with the final
+    # ad_id — eliminates ~30 redundant object creations per adm response.
+    if _adm_raw:
+        _parsed = _parse_adm_vast(_adm_raw)
+        if not _parsed["has_media"]:
+            logger.warning(
+                "DSP adm has no MediaFile – skipping",
+                request_id=request_id,
+            )
+            return _empty_vast_response(request_id)
+        if _parsed["ad_id"]:
+            ad_id = _parsed["ad_id"]
+        if _parsed["creative_id"]:
+            ad_id = f"ad_{candidate.campaign_id}_{_parsed['creative_id']}"
+
     _adomain_list = _meta.get("adomain") or []
     _adomain = _adomain_list[0] if _adomain_list else ""
     # Always brand source as viadsmedia.com (cross-platform ad server)
@@ -549,16 +564,13 @@ async def vast_tag(
         country=_country, bid_price=_bid_price,
     )
 
-    # Build VAST tracking events (shared helper)
-    tracking_events = build_tracking_events(
+    # Build VAST tracking events (shared helper — single call with final ad_id)
+    trk = build_all_tracking(
         base_url, request_id, ad_id, env, _tracking_suffix,
     )
-    impression_url = build_impression_url(
-        base_url, request_id, ad_id, env, _tracking_suffix,
-    )
-    error_url = build_error_url(
-        base_url, request_id, ad_id, env, _tracking_suffix,
-    )
+    tracking_events = trk.events
+    impression_url = trk.impression_url
+    error_url = trk.error_url
 
     # nurl / burl (auction price notification)
     nurl = build_nurl(base_url, request_id, ad_id, env)
@@ -572,39 +584,8 @@ async def vast_tag(
     )
 
     # Choose InLine vs Wrapper depending on creative type
-    if candidate.metadata.get("adm"):
+    if _adm_raw:
         # Demand ORTB bid with inline VAST XML (adm field)
-        # Parse DSP VAST to extract real Ad/Creative IDs and verify media
-        _adm_raw = candidate.metadata["adm"]
-        _parsed = _parse_adm_vast(_adm_raw)
-
-        if not _parsed["has_media"]:
-            # No media file in DSP response – skip tracking, return no-fill
-            logger.warning(
-                "DSP adm has no MediaFile – skipping",
-                request_id=request_id,
-            )
-            return _empty_vast_response(request_id)
-
-        # Use the Ad id and Creative id from the DSP's VAST if available
-        if _parsed["ad_id"]:
-            ad_id = _parsed["ad_id"]
-        if _parsed["creative_id"]:
-            # Rebuild tracking URLs with the real creative info from the DSP VAST.
-            # The creative ID here is a raw string from the XML (may be non-numeric),
-            # so we build the tracking key directly rather than via build_ad_id().
-            _real_crid = _parsed["creative_id"]
-            ad_id = f"ad_{candidate.campaign_id}_{_real_crid}"
-            tracking_events = build_tracking_events(
-                base_url, request_id, ad_id, env, _tracking_suffix,
-            )
-            impression_url = build_impression_url(
-                base_url, request_id, ad_id, env, _tracking_suffix,
-            )
-            error_url = build_error_url(
-                base_url, request_id, ad_id, env, _tracking_suffix,
-            )
-
         # Inject our error pixel + tracking events into the DSP's VAST XML.
         # We do NOT inject <Impression> here because the DSP's adm already
         # contains its own <Impression> tag; adding a second one causes
@@ -616,30 +597,13 @@ async def vast_tag(
             tracking_events=tracking_events,
         )
         # Fire the demand partner's nurl (win notification) in background
-        demand_nurl = candidate.metadata.get("nurl")
+        demand_nurl = _meta.get("nurl")
         if demand_nurl:
             asyncio.create_task(
                 _fire_win_notice(demand_nurl, candidate.bid)
             )
-    elif candidate.vast_url:
-        # Wrapper or InLine – delegate to shared helper.
-        vast_xml = build_vast_for_candidate(
-            candidate,
-            vast_version=vast_version,
-            ad_id=ad_id,
-            tracking_events=tracking_events,
-            impression_url=impression_url,
-            error_url=error_url,
-            base_url=base_url,
-            request_id=request_id,
-            env=env,
-            width=w,
-            height=h,
-            nurl=nurl,
-            burl=burl,
-        )
     else:
-        # InLine – direct video creative.
+        # Wrapper (vast_url) or InLine (video_url) – shared helper handles both.
         vast_xml = build_vast_for_candidate(
             candidate,
             vast_version=vast_version,
@@ -657,7 +621,7 @@ async def vast_tag(
         )
         if vast_xml is None:
             logger.warning(
-                "InLine candidate has no video_url – returning no-fill",
+                "Candidate has no video_url or vast_url – returning no-fill",
                 request_id=request_id,
                 ad_id=ad_id,
             )
@@ -677,13 +641,9 @@ async def vast_tag(
         content=vast_xml,
         media_type="application/xml",
         headers={
-            "Content-Type": "application/xml; charset=utf-8",
+            **_VAST_OK_HEADERS,
             "X-Request-ID": request_id,
             "X-LiteAds-Environment": env,
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
         },
     )
 
@@ -828,21 +788,8 @@ def _resolve_base_url(request: Request, settings: Any) -> str:
 
 
 def _empty_vast_response(request_id: str = "") -> Response:
-    """Return an empty VAST document (no fill).
-
-    Per VAST spec, return HTTP 200 with an empty VAST element — not 204.
-    This is critical for SSP/exchange compatibility (Magnite, Xandr, etc.).
-    Delegates to ``common.tracking`` for the shared XML / headers.
-    """
-    headers = empty_vast_headers(request_id)
-    headers["Pragma"] = "no-cache"
-    headers["Access-Control-Allow-Origin"] = "*"
-    return Response(
-        content=empty_vast_xml(),
-        media_type="application/xml",
-        status_code=200,
-        headers=headers,
-    )
+    """Alias for the shared ``empty_vast_response`` in ``common.tracking``."""
+    return empty_vast_response(request_id)
 
 
 # ===========================================================================

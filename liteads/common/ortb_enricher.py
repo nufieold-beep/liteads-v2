@@ -241,22 +241,11 @@ def _enrich_geo(br: Any, enriched_fields: list[str]) -> None:
         return
 
     try:
-        from liteads.common.geoip import lookup as geoip_lookup
-        from liteads.schemas.openrtb import Geo as OrtbGeo
+        from liteads.common.geoip import geoip_to_ortb_geo
 
-        g = geoip_lookup(br.device.ip)
-        if g and g.country:
-            br.device.geo = OrtbGeo(
-                country=g.country,
-                region=g.region,
-                city=g.city,
-                metro=g.metro,
-                lat=g.lat,
-                lon=g.lon,
-                zip=getattr(g, "zip", None),
-                type=g.type,         # 2 = IP-based
-                ipservice=g.ipservice,  # 3 = MaxMind
-            )
+        ortb_geo = geoip_to_ortb_geo(br.device.ip)
+        if ortb_geo is not None:
+            br.device.geo = ortb_geo
             enriched_fields.append("device.geo (MaxMind)")
     except Exception as exc:
         logger.debug("GeoIP enrichment skipped", error=str(exc))

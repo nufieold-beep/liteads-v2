@@ -67,18 +67,58 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
 # HTTP helpers (shared by routers)
 # ---------------------------------------------------------------------------
 
+# Environment string → DB integer mapping (Campaign.environment column).
+# 1=CTV, 2=INAPP, None=both  (matches models/ad.py comment)
+ENV_TO_INT: dict[str, int] = {"ctv": 1, "inapp": 2}
+
+
+# ---------------------------------------------------------------------------
+# CSV parsing helpers (used by demand_forwarder for ORTB field mapping)
+# ---------------------------------------------------------------------------
+
+def csv_ints(val: str | None) -> list[int]:
+    """Parse a comma-separated string into a list of ints, ignoring bad values."""
+    if not val:
+        return []
+    out: list[int] = []
+    for p in val.split(","):
+        p = p.strip()
+        if p:
+            try:
+                out.append(int(p))
+            except ValueError:
+                pass
+    return out
+
+
+def csv_strs(val: str | None) -> list[str]:
+    """Parse a comma-separated string, stripping whitespace and dropping blanks."""
+    if not val:
+        return []
+    return [s.strip() for s in val.split(",") if s.strip()]
+
+
 def extract_client_ip(
     x_forwarded_for: str | None,
     request_client_host: str | None,
+    x_real_ip: str | None = None,
 ) -> str | None:
-    """Extract the real client IP from ``X-Forwarded-For`` or the socket.
+    """Extract the real client IP from proxy headers or the socket.
 
-    This was previously copy-pasted 6 times across event.py, openrtb.py,
-    and vast_tag.py.
+    Priority:
+    1. ``X-Real-IP`` (set by nginx from ``$remote_addr`` — not spoofable).
+    2. **Last** entry of ``X-Forwarded-For`` (closest trusted hop).
+    3. The raw socket peer address.
+
+    Using the *last* XFF entry (rather than the first) is deliberate:
+    behind a single trusted reverse-proxy the first hop may be forged by
+    the client, whereas the last is appended by the proxy itself.
     """
-    return (
-        x_forwarded_for.split(",")[0].strip() if x_forwarded_for else None
-    ) or request_client_host
+    if x_real_ip:
+        return x_real_ip.strip()
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[-1].strip()
+    return request_client_host
 
 
 def parse_optional_iso_datetime(s: str | None) -> datetime | None:
