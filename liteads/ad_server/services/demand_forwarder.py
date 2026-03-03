@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging as _logging
 import re
 import time
 import uuid
@@ -493,7 +494,7 @@ class DemandForwarder:
             timeout_ms=effective_timeout_ms,
             ortb_bundle=_app.get("bundle"),
         )
-        if logger.isEnabledFor(10):  # 10 = DEBUG
+        if _logging.getLogger().isEnabledFor(_logging.DEBUG):
             _dev = bid_payload.get("device", {})
             _geo = _dev.get("geo", {})
             logger.debug(
@@ -513,7 +514,7 @@ class DemandForwarder:
         # ── Debug: log full ORTB payload (truncated to avoid log bloat) ──
         # Guard behind log-level check so orjson.dumps is not called
         # on every request when debug logging is disabled (~0.3ms saved).
-        if logger.isEnabledFor(10):  # 10 = DEBUG
+        if _logging.getLogger().isEnabledFor(_logging.DEBUG):
             try:
                 _payload_bytes = orjson.dumps(bid_payload)
                 logger.debug(
