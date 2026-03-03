@@ -12,6 +12,7 @@ programmatic CTV/in-app video exchanges.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
@@ -162,9 +163,9 @@ async def openrtb_bid(
     # Process bid request through pipeline
     bid_response = await openrtb_service.process_bid_request(bid_request)
 
-    # ---- Track ad request / opportunity metrics ----
+    # ---- Track ad request / opportunity metrics (fire-and-forget) ----
+    # These are Redis-only operations — no need to block the ORTB response.
     if bid_response and bid_response.seatbid:
-        # Extract campaign IDs from winning bids
         filled_campaign_ids: list[int] = []
         for sb in bid_response.seatbid:
             for b in sb.bid:
@@ -172,10 +173,10 @@ async def openrtb_bid(
                     filled_campaign_ids.append(int(b.cid))  # type: ignore[arg-type]
                 except (ValueError, TypeError):
                     pass
-        await EventService.track_ad_request(filled_campaign_ids or None)
-        await EventService.track_ad_opportunity(filled_campaign_ids)
+        asyncio.create_task(EventService.track_ad_request(filled_campaign_ids or None))
+        asyncio.create_task(EventService.track_ad_opportunity(filled_campaign_ids))
     else:
-        await EventService.track_ad_request(None)
+        asyncio.create_task(EventService.track_ad_request(None))
 
     # No-bid → HTTP 204 (per OpenRTB spec)
     if bid_response is None or not bid_response.seatbid:

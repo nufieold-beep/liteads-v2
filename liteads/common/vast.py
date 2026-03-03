@@ -431,6 +431,20 @@ class VASTBuilder:
 # Convenience factory
 # ---------------------------------------------------------------------------
 
+# Module-level builder cache — only a handful of VAST versions exist,
+# so caching avoids per-request VASTBuilder instantiation.
+_builder_cache: dict[str, VASTBuilder] = {}
+
+
+def _get_builder(version: str) -> VASTBuilder:
+    """Return a cached VASTBuilder for *version* (thread-safe for asyncio)."""
+    b = _builder_cache.get(version)
+    if b is None:
+        b = VASTBuilder(version=version)
+        _builder_cache[version] = b
+    return b
+
+
 def build_vast_xml(
     *,
     version: str = "4.0",
@@ -510,7 +524,7 @@ def build_vast_xml(
         category=category,
     )
 
-    builder = VASTBuilder(version=version)
+    builder = _get_builder(version)
     return builder.build(creative)
 
 
@@ -564,5 +578,5 @@ def build_vast_wrapper_xml(
         price_model="cpm",
     )
 
-    builder = VASTBuilder(version=version)
+    builder = _get_builder(version)
     return builder.build_wrapper(vast_tag_uri, creative)

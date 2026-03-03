@@ -5,43 +5,23 @@ Utility functions for LiteAds.
 from __future__ import annotations
 
 import hashlib
-import math
 import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, TypeVar
+from typing import Any
 
 import orjson
 
-T = TypeVar("T")
-
 
 def generate_request_id() -> str:
-    """Generate a unique request ID."""
-    return str(uuid.uuid4())
-
-
-def generate_id() -> int:
-    """Generate a unique integer ID using timestamp and random bits."""
-    timestamp = int(time.time() * 1000)
-    random_bits = uuid.uuid4().int & 0xFFFF
-    return (timestamp << 16) | random_bits
+    """Generate a unique request ID (32-char hex, no dashes — faster)."""
+    return uuid.uuid4().hex
 
 
 def current_timestamp() -> int:
     """Get current Unix timestamp in seconds."""
     return int(time.time())
-
-
-def current_timestamp_ms() -> int:
-    """Get current Unix timestamp in milliseconds."""
-    return int(time.time() * 1000)
-
-
-def current_datetime() -> datetime:
-    """Get current datetime in UTC."""
-    return datetime.now(timezone.utc)
 
 
 def current_hour() -> str:
@@ -52,11 +32,6 @@ def current_hour() -> str:
 def current_date() -> str:
     """Get current date as string (YYYYMMDD)."""
     return datetime.now(timezone.utc).strftime("%Y%m%d")
-
-
-def hash_string(s: str) -> str:
-    """Hash a string using MD5."""
-    return hashlib.md5(s.encode()).hexdigest()
 
 
 def hash_user_id(user_id: str) -> int:
@@ -86,37 +61,6 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
     if denominator == 0:
         return default
     return numerator / denominator
-
-
-def clamp(value: float, min_val: float, max_val: float) -> float:
-    """Clamp value between min and max."""
-    return max(min_val, min(max_val, value))
-
-
-def sigmoid(x: float) -> float:
-    """Sigmoid function."""
-    return 1 / (1 + math.exp(-x))
-
-
-def chunks(lst: list[T], n: int) -> list[list[T]]:
-    """Split a list into chunks of size n."""
-    return [lst[i : i + n] for i in range(0, len(lst), n)]
-
-
-def flatten(nested: list[list[T]]) -> list[T]:
-    """Flatten a nested list."""
-    return [item for sublist in nested for item in sublist]
-
-
-def dedupe(lst: list[T]) -> list[T]:
-    """Remove duplicates while preserving order."""
-    seen: set[Any] = set()
-    result: list[T] = []
-    for item in lst:
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -202,42 +146,3 @@ class Timer:
     def elapsed_s(self) -> float:
         """Get elapsed time in seconds."""
         return self.end_time - self.start_time
-
-
-def retry(
-    max_attempts: int = 3,
-    delay: float = 0.1,
-    backoff: float = 2.0,
-    exceptions: tuple[type[Exception], ...] = (Exception,),
-) -> Any:
-    """
-    Decorator for retrying a function on failure.
-
-    Args:
-        max_attempts: Maximum number of attempts.
-        delay: Initial delay between retries in seconds.
-        backoff: Multiplier for delay on each retry.
-        exceptions: Tuple of exceptions to catch.
-    """
-    import functools
-
-    def decorator(func: Any) -> Any:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            current_delay = delay
-            last_exception = None
-
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as e:
-                    last_exception = e
-                    if attempt < max_attempts - 1:
-                        time.sleep(current_delay)
-                        current_delay *= backoff
-
-            raise last_exception  # type: ignore
-
-        return wrapper
-
-    return decorator

@@ -30,7 +30,6 @@ from liteads.common.tracking import (
     build_tracking_events,
 )
 from liteads.common.vast import TrackingEvent, build_vast_xml, build_vast_wrapper_xml
-from liteads.rec_engine.ranking.bidding import SecondPriceAuction
 from liteads.schemas.openrtb import (
     Bid,
     BidRequest,
@@ -65,10 +64,6 @@ class OpenRTBService:
         self._ad_service = ad_service
         self._settings = get_settings()
         self._pod_builder = PodBuilder()
-        self._auction = SecondPriceAuction(
-            increment=0.01,
-            bid_floor=0.0,  # will be overridden per-request
-        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -213,15 +208,10 @@ class OpenRTBService:
         bid_floor: float = 0.0,
     ) -> list[AdCandidate]:
         """
-        Apply second-price auction clearing to candidates.
+        Apply bid-floor filtering to candidates.
 
-        For single-winner auctions the winner pays second-highest + ε.
-        For multi-winner (pod) auctions a generalised second-price (GSP)
-        mechanism is used where each winner pays the next winner's bid.
-
-        The clearing price is stored back into ``candidate.bid`` so that
-        the bid response reflects the actual expected payment rather than
-        the full first-price bid. This is standard practice for SSPs.
+        Candidates whose bid falls below the floor are removed.
+        Remaining candidates keep their original bid price.
         """
         if not candidates:
             return []
@@ -231,36 +221,20 @@ class OpenRTBService:
             if not c.ecpm or c.ecpm <= 0:
                 c.ecpm = c.bid
 
-        if len(candidates) == 1:
-            # Single candidate: clearing at floor + increment
-            winner, clearing = self._auction.run_auction(
-                candidates, bid_floor=bid_floor,
-            )
-            if winner is None:
-                return []
-            winner.bid = clearing
-            return [winner]
+        # Filter by bid floor
+        winners = [c for c in candidates if c.bid >= bid_floor]
 
-        # Multi-winner GSP auction
-        results = self._auction.run_multi_winner_auction(
-            candidates,
-            num_winners=len(candidates),
-            bid_floor=bid_floor,
-        )
-
-        if not results:
+        if not winners:
             return []
 
-        winners = []
-        for winner, clearing in results:
-            winner.bid = clearing
-            winners.append(winner)
+        # Sort by bid descending
+        winners.sort(key=lambda c: c.bid, reverse=True)
 
         logger.info(
-            "Auction pricing applied",
+            "Bid floor filtering applied",
             num_winners=len(winners),
             bid_floor=bid_floor,
-            top_clearing=winners[0].bid if winners else 0,
+            top_bid=winners[0].bid if winners else 0,
         )
 
         return winners

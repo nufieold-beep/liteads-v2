@@ -1,7 +1,7 @@
 """
 Recommendation Engine module.
 
-Provides ad recommendation pipeline with retrieval, filtering, and ranking.
+Provides ad recommendation pipeline with retrieval and filtering.
 """
 
 from liteads.rec_engine.engine import (

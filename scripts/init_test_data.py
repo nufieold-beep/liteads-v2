@@ -73,7 +73,6 @@ async def init_database():
             campaign_id BIGINT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
             title VARCHAR(255),
             description TEXT,
-            image_url VARCHAR(500),
             video_url VARCHAR(500),
             landing_url VARCHAR(500) NOT NULL,
             creative_type SMALLINT DEFAULT 1 NOT NULL,
@@ -216,12 +215,12 @@ async def init_database():
         creative_type = 1 if c_type == "banner" else (2 if c_type == "video" else 3)
         await conn.execute(
             """
-            INSERT INTO creatives (campaign_id, title, description, image_url, landing_url,
+            INSERT INTO creatives (campaign_id, title, description, video_url, landing_url,
                                    creative_type, width, height, status)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
             """,
             camp_id, title, desc,
-            f"https://via.placeholder.com/{width}x{height}",
+            f"https://cdn.example.com/video/{camp_id}_{width}x{height}.mp4",
             f"https://example.com/landing/{camp_id}",
             creative_type, width, height
         )

@@ -13,7 +13,6 @@ from liteads.common.config import get_settings
 from liteads.common.logger import get_logger
 from liteads.common.utils import hash_user_id
 from liteads.rec_engine import RecommendationConfig, RecommendationEngine
-from liteads.rec_engine.ranking.bidding import RankingStrategy
 from liteads.schemas.internal import AdCandidate, UserContext
 from liteads.schemas.request import AdRequest
 
@@ -40,22 +39,6 @@ class AdService:
                 enable_budget_filter=True,
                 enable_frequency_filter=True,
                 enable_quality_filter=True,
-                enable_ml_prediction=self.settings.ad_serving.enable_ml_prediction,
-
-                fallback_vtr=0.70,   # Video completion rate baseline
-                fallback_ctr=0.005,  # Lower CTR for video
-
-                # Revenue-optimized ranking blends CPM × pVTR × duration
-                # efficiency so we maximise expected yield per impression
-                # while still keeping the auction competitive.
-                ranking_strategy=RankingStrategy.REVENUE_OPTIMIZED,
-
-                enable_diversity_rerank=True,
-                enable_exploration=True,
-                # Reduce exploration from 10% to 3%.
-                # 10% is appropriate for cold-start but sacrifices
-                # ~7% of revenue on steady-state traffic.
-                exploration_epsilon=0.03,
             )
             self._engine = RecommendationEngine(
                 session=self.session,
@@ -84,20 +67,14 @@ class AdService:
         """
         user_context = self._build_user_context(request)
 
-        # ── Propagate bid floor into the ranking stage ────────────
-        bid_floor = request.bid_floor if request.bid_floor and request.bid_floor > 0 else 0.0
-        if bid_floor > 0:
-            self.engine.bidding.bid_floor = bid_floor
-
         candidates, metrics = await self.engine.recommend(
             user_context=user_context,
             slot_id=request.slot_id,
             num_ads=request.num_ads,
         )
 
-        # ── Post-ranking bid floor enforcement ────────────────────
-        # The ranker already pre-filters by floor, but as a safety
-        # net we enforce it again here.
+        # ── Post-selection bid floor enforcement ────────────────────
+        bid_floor = request.bid_floor if request.bid_floor and request.bid_floor > 0 else 0.0
         if bid_floor > 0:
             before = len(candidates)
             candidates = [c for c in candidates if c.bid >= bid_floor]
@@ -174,7 +151,3 @@ class AdService:
             ctx.custom_features = request.user_features.custom or {}
 
         return ctx
-
-    async def refresh_cache(self) -> None:
-        """Refresh recommendation engine cache."""
-        await self.engine.refresh_cache()

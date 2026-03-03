@@ -76,17 +76,6 @@ def get_logger(name: str | None = None) -> structlog.BoundLogger:
     return logger
 
 
-class LoggerMixin:
-    """Mixin class to add logging capability to any class."""
-
-    @property
-    def logger(self) -> structlog.BoundLogger:
-        """Get logger bound with class name."""
-        if not hasattr(self, "_logger"):
-            self._logger = get_logger(self.__class__.__name__)
-        return self._logger
-
-
 def log_context(**kwargs: Any) -> None:
     """
     Add context variables to all subsequent log messages in the current context.

@@ -20,7 +20,7 @@ def sample_candidates() -> list[AdCandidate]:
             bid=5.0,
             bid_type=1,
             title="Ad 1",
-            image_url="https://example.com/img1.jpg",
+            video_url="https://example.com/video1.mp4",
             landing_url="https://example.com/1",
         ),
         AdCandidate(
@@ -30,6 +30,7 @@ def sample_candidates() -> list[AdCandidate]:
             bid=3.0,
             bid_type=1,
             title="",  # Empty title
+            video_url="https://example.com/video2.mp4",
             landing_url="https://example.com/2",
         ),
         AdCandidate(
@@ -39,6 +40,7 @@ def sample_candidates() -> list[AdCandidate]:
             bid=4.0,
             bid_type=1,
             title="Ad 3",
+            video_url="https://example.com/video3.mp4",
             landing_url="",  # Empty landing URL
         ),
     ]
@@ -83,30 +85,31 @@ class TestQualityFilter:
         assert all(c.landing_url for c in result)
 
     @pytest.mark.asyncio
-    async def test_require_title(
+    async def test_require_video_url(
         self,
-        sample_candidates: list[AdCandidate],
         sample_user_context: UserContext,
     ) -> None:
-        """Test filtering candidates without title when required."""
-        filter = QualityFilter(require_title=True)
-        result = await filter.filter(sample_candidates, sample_user_context)
+        """Test filtering candidates without video URL."""
+        candidates = [
+            AdCandidate(
+                campaign_id=1, creative_id=101, advertiser_id=1,
+                bid=5.0, bid_type=1, title="Ad 1",
+                video_url="https://example.com/video.mp4",
+                landing_url="https://example.com/1",
+            ),
+            AdCandidate(
+                campaign_id=2, creative_id=201, advertiser_id=2,
+                bid=3.0, bid_type=1, title="Ad 2",
+                video_url="",  # No video URL
+                landing_url="https://example.com/2",
+            ),
+        ]
+        filter = QualityFilter(require_video_url=True)
+        result = await filter.filter(candidates, sample_user_context)
 
-        # Should filter out candidates without title
-        assert all(c.title for c in result)
-
-    @pytest.mark.asyncio
-    async def test_require_image(
-        self,
-        sample_candidates: list[AdCandidate],
-        sample_user_context: UserContext,
-    ) -> None:
-        """Test filtering candidates without image when required."""
-        filter = QualityFilter(require_image=True)
-        result = await filter.filter(sample_candidates, sample_user_context)
-
-        # Should only pass candidates with image
-        assert all(c.image_url for c in result)
+        # Should only pass candidates with video URL
+        assert len(result) == 1
+        assert result[0].video_url
 
 
 class TestDiversityFilter:

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import base64
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from liteads.ad_server.services.event_service import EventService
@@ -123,6 +123,7 @@ async def track_event(
 @router.get("/track")
 async def track_event_get(
     request: Request,
+    background_tasks: BackgroundTasks,
     type: str = Query(..., alias="type", description="VAST event type"),
     req: str = Query(..., description="Request ID"),
     ad: str = Query(..., description="Ad ID"),
@@ -142,7 +143,8 @@ async def track_event_get(
     Track video event via GET request (pixel/beacon tracking).
 
     Used for VAST tracking URLs embedded in VAST XML.
-    Returns a 1x1 transparent GIF pixel (industry standard).
+    Returns a 1x1 transparent GIF pixel immediately; the actual DB/Redis
+    tracking runs as a background task after the response is sent.
     Supports all VAST 2.x-4.x event types and the [ERRORCODE] macro.
     """
     log_context(
@@ -167,7 +169,10 @@ async def track_event_get(
         except ValueError:
             pass
 
-    await event_service.track_event(
+    # Schedule tracking in background — return pixel immediately.
+    # FastAPI keeps the dependency (session) alive until background tasks finish.
+    background_tasks.add_task(
+        event_service.track_event,
         request_id=req,
         ad_id=ad,
         event_type=type,
@@ -184,13 +189,14 @@ async def track_event_get(
         win_price=_win_price,
     )
 
-    # Return 1x1 pixel — SSPs and video players expect an image response
+    # Return 1x1 pixel immediately — players don't wait for tracking.
     return _pixel_response()
 
 
 @router.get("/win")
 async def win_notification(
     request: Request,
+    background_tasks: BackgroundTasks,
     req: str = Query(..., description="Request ID"),
     ad: str = Query(..., description="Ad ID"),
     price: str = Query("0", description="Auction clearing price (CPM)"),
@@ -206,7 +212,7 @@ async def win_notification(
     the actual clearing price before calling this endpoint.
 
     This is the standard OpenRTB 2.6 win notification mechanism.
-    Returns a 1x1 pixel (exchanges expect image or 204).
+    Returns a 1x1 pixel immediately; tracking runs in background.
     """
     log_context(request_id=req, ad_id=ad)
 
@@ -219,12 +225,10 @@ async def win_notification(
         environment=env,
     )
 
-    # Record as WIN event with auction clearing price.
-    # NOTE: nurl = win notification, NOT impression billing.
-    # Impressions are tracked via burl (billing notification) or VAST pixel.
     client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
 
-    await event_service.track_event(
+    background_tasks.add_task(
+        event_service.track_event,
         request_id=req,
         ad_id=ad,
         event_type="win",
@@ -243,6 +247,7 @@ async def win_notification(
 @router.get("/loss")
 async def loss_notification(
     request: Request,
+    background_tasks: BackgroundTasks,
     req: str = Query(..., description="Request ID"),
     ad: str = Query(..., description="Ad ID"),
     reason: str = Query("0", description="Loss reason code (OpenRTB Table 5.25)"),
@@ -287,7 +292,8 @@ async def loss_notification(
 
     client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
 
-    await event_service.track_event(
+    background_tasks.add_task(
+        event_service.track_event,
         request_id=req,
         ad_id=ad,
         event_type="loss",
@@ -309,6 +315,7 @@ async def loss_notification(
 @router.get("/billing")
 async def billing_notification(
     request: Request,
+    background_tasks: BackgroundTasks,
     req: str = Query(..., description="Request ID"),
     ad: str = Query(..., description="Ad ID"),
     price: str = Query("0", description="Billable price (CPM)"),
@@ -322,7 +329,7 @@ async def billing_notification(
     Called when the ad is actually rendered/billed.
     This is the OpenRTB 2.6 billing notification — confirms the ad
     was rendered and billing should occur at the specified price.
-    Returns a 1x1 pixel (exchanges expect image or 204).
+    Returns a 1x1 pixel immediately; billing runs in background.
     """
     log_context(request_id=req, ad_id=ad)
 
@@ -336,7 +343,8 @@ async def billing_notification(
 
     client_ip = extract_client_ip(x_forwarded_for, request.client.host if request.client else None)
 
-    await event_service.track_event(
+    background_tasks.add_task(
+        event_service.track_event,
         request_id=req,
         ad_id=ad,
         event_type="impression",

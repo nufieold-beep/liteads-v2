@@ -178,8 +178,12 @@ curl -X POST http://localhost:8000/api/v1/ad/request \
       "creative": {
         "title": "Summer Sale - 50% Off!",
         "description": "Limited time offer",
-        "image_url": "https://cdn.example.com/ads/summer-sale.jpg",
-        "landing_url": "https://shop.example.com/sale"
+        "video_url": "https://cdn.example.com/video/summer-sale.mp4",
+        "landing_url": "https://shop.example.com/sale",
+        "duration": 30,
+        "width": 1920,
+        "height": 1080,
+        "mime_type": "video/mp4"
       },
       "tracking": {
         "impression_url": "http://localhost:8000/api/v1/event/track?type=impression&req=req_a1b2c3d4&ad=1001",

@@ -52,31 +52,6 @@ HTTP_REQUESTS_IN_PROGRESS = Gauge(
     ["method", "endpoint"],
 )
 
-# Ad serving metrics
-AD_REQUESTS_TOTAL = Counter(
-    "liteads_ad_requests_total",
-    "Total ad requests",
-    ["slot_id", "status"],
-)
-
-AD_IMPRESSIONS_TOTAL = Counter(
-    "liteads_ad_impressions_total",
-    "Total ad impressions",
-    ["campaign_id", "creative_id"],
-)
-
-AD_CLICKS_TOTAL = Counter(
-    "liteads_ad_clicks_total",
-    "Total ad clicks",
-    ["campaign_id", "creative_id"],
-)
-
-AD_CONVERSIONS_TOTAL = Counter(
-    "liteads_ad_conversions_total",
-    "Total ad conversions",
-    ["campaign_id", "creative_id"],
-)
-
 # Recommendation engine metrics
 RETRIEVAL_LATENCY = Histogram(
     "liteads_retrieval_latency_seconds",
@@ -88,18 +63,6 @@ FILTER_LATENCY = Histogram(
     "liteads_filter_latency_seconds",
     "Filter stage latency",
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1),
-)
-
-RANKING_LATENCY = Histogram(
-    "liteads_ranking_latency_seconds",
-    "Ranking stage latency",
-    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1),
-)
-
-ML_PREDICTION_LATENCY = Histogram(
-    "liteads_ml_prediction_latency_seconds",
-    "ML prediction latency",
-    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25),
 )
 
 CANDIDATES_COUNT = Histogram(
@@ -120,21 +83,6 @@ CACHE_MISS_TOTAL = Counter(
     "liteads_cache_miss_total",
     "Total cache misses",
     ["cache_type"],
-)
-
-# Database metrics
-DB_QUERY_LATENCY = Histogram(
-    "liteads_db_query_latency_seconds",
-    "Database query latency",
-    ["query_type"],
-    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5),
-)
-
-# Model metrics
-MODEL_VERSION = Gauge(
-    "liteads_model_version",
-    "Currently loaded model version",
-    ["model_name"],
 )
 
 # ── CTV / SSAI delivery health metrics ──────────────────────────────────
@@ -175,22 +123,6 @@ BID_FLOOR_FILTERED_TOTAL = Counter(
     ["slot_id"],
 )
 
-AD_POD_REQUESTS_TOTAL = Counter(
-    "liteads_ad_pod_requests_total",
-    "Total ad pod (multi-slot) requests",
-)
-
-AD_POD_FILL_RATE = Histogram(
-    "liteads_ad_pod_fill_rate",
-    "Ad pod fill rate (filled_slots / total_slots)",
-    buckets=(0, 0.25, 0.5, 0.75, 1.0),
-)
-
-AD_POD_REVENUE = Histogram(
-    "liteads_ad_pod_revenue_cpm",
-    "Total CPM revenue per pod",
-    buckets=(0, 1, 2, 5, 10, 20, 50, 100),
-)
 
 QUARTILE_FUNNEL = Counter(
     "liteads_quartile_funnel_total",
@@ -292,83 +224,6 @@ async def metrics_endpoint() -> StarletteResponse:
 # Helper Functions for Recording Business Metrics
 # =============================================================================
 
-def record_ad_request(slot_id: str, success: bool) -> None:
-    """Record an ad request."""
-    status = "success" if success else "no_fill"
-    AD_REQUESTS_TOTAL.labels(slot_id=slot_id, status=status).inc()
-
-
-def record_impression(campaign_id: int, creative_id: int) -> None:
-    """Record an ad impression."""
-    AD_IMPRESSIONS_TOTAL.labels(
-        campaign_id=str(campaign_id),
-        creative_id=str(creative_id),
-    ).inc()
-
-
-def record_click(campaign_id: int, creative_id: int) -> None:
-    """Record an ad click."""
-    AD_CLICKS_TOTAL.labels(
-        campaign_id=str(campaign_id),
-        creative_id=str(creative_id),
-    ).inc()
-
-
-def record_conversion(campaign_id: int, creative_id: int) -> None:
-    """Record an ad conversion."""
-    AD_CONVERSIONS_TOTAL.labels(
-        campaign_id=str(campaign_id),
-        creative_id=str(creative_id),
-    ).inc()
-
-
-def record_retrieval_latency(duration: float) -> None:
-    """Record retrieval stage latency."""
-    RETRIEVAL_LATENCY.observe(duration)
-
-
-def record_filter_latency(duration: float) -> None:
-    """Record filter stage latency."""
-    FILTER_LATENCY.observe(duration)
-
-
-def record_ranking_latency(duration: float) -> None:
-    """Record ranking stage latency."""
-    RANKING_LATENCY.observe(duration)
-
-
-def record_ml_prediction_latency(duration: float) -> None:
-    """Record ML prediction latency."""
-    ML_PREDICTION_LATENCY.observe(duration)
-
-
-def record_candidates_count(stage: str, count: int) -> None:
-    """Record candidate count at a stage."""
-    CANDIDATES_COUNT.labels(stage=stage).observe(count)
-
-
-def record_cache_hit(cache_type: str) -> None:
-    """Record a cache hit."""
-    CACHE_HIT_TOTAL.labels(cache_type=cache_type).inc()
-
-
-def record_cache_miss(cache_type: str) -> None:
-    """Record a cache miss."""
-    CACHE_MISS_TOTAL.labels(cache_type=cache_type).inc()
-
-
-def record_db_query_latency(query_type: str, duration: float) -> None:
-    """Record database query latency."""
-    DB_QUERY_LATENCY.labels(query_type=query_type).observe(duration)
-
-
-def set_model_version(model_name: str, version: float) -> None:
-    """Set the current model version."""
-    MODEL_VERSION.labels(model_name=model_name).set(version)
-
-
-# ── CTV delivery health helpers ──────────────────────────────────────────
-
 def record_vast_error(error_code: str, campaign_id: str = "unknown") -> None:
     """Record a VAST error event by error code and campaign."""
     VAST_ERRORS_TOTAL.labels(error_code=error_code, campaign_id=campaign_id).inc()
@@ -397,21 +252,6 @@ def record_no_bid(reason: str = "no_fill") -> None:
 def record_bid_floor_filtered(slot_id: str, count: int = 1) -> None:
     """Record candidates filtered by bid floor."""
     BID_FLOOR_FILTERED_TOTAL.labels(slot_id=slot_id).inc(count)
-
-
-def record_pod_request() -> None:
-    """Record an ad pod request."""
-    AD_POD_REQUESTS_TOTAL.inc()
-
-
-def record_pod_fill(fill_rate: float) -> None:
-    """Record pod fill rate."""
-    AD_POD_FILL_RATE.observe(fill_rate)
-
-
-def record_pod_revenue(revenue_cpm: float) -> None:
-    """Record total pod CPM revenue."""
-    AD_POD_REVENUE.observe(revenue_cpm)
 
 
 def record_quartile(stage: str, campaign_id: str) -> None:

@@ -343,67 +343,6 @@ class EventService:
             logger.warning(f"Failed to calculate CPM cost for campaign {campaign_id}: {e}")
             return Decimal("0.000000")
 
-    async def _update_budget_spend(self, campaign_id: int, cost: Decimal) -> None:
-        """Update campaign spend in Redis after CPM billing."""
-        if cost <= 0:
-            return
-
-        today = current_date()
-        key = f"budget:{campaign_id}:{today}"
-
-        try:
-            pipe = redis_client.pipeline()
-            pipe.hincrbyfloat(key, "spent_today", float(cost))
-            pipe.hincrbyfloat(key, "spent_total", float(cost))
-            pipe.expire(key, 86400 * 2)
-            await pipe.execute()
-        except Exception as e:
-            logger.error(f"Failed to update budget spend for campaign {campaign_id}: {e}")
-
-    async def _update_stats(
-        self, campaign_id: int | None, event_type: int, win_price: float = 0.0,
-    ) -> None:
-        """Update real-time video statistics in Redis."""
-        if campaign_id is None:
-            return
-
-        hour = current_hour()
-        key = CacheKeys.stat_hourly(campaign_id, hour)
-
-        field_name = _STAT_FIELD_MAP.get(EventType(event_type) if event_type in EventType else event_type)  # type: ignore[arg-type]
-
-        # Use a pipeline to batch Redis round-trips (critical for QPS)
-        pipe = redis_client.pipeline()
-
-        if field_name:
-            pipe.hincrby(key, field_name, 1)
-
-        # Track auction wins from nurl callbacks (WIN event type)
-        if event_type == EventType.WIN and win_price > 0:
-            pipe.hincrby(key, "wins", 1)
-            pipe.hincrbyfloat(key, "win_price_sum", win_price)
-
-        pipe.expire(key, 48 * 3600)
-        await pipe.execute()
-
-    async def _update_frequency(self, user_id: str, campaign_id: int | None) -> None:
-        """Update frequency counter on impression."""
-        if campaign_id is None:
-            return
-
-        today = current_date()
-        hour = current_hour()
-
-        daily_key = CacheKeys.freq_daily(user_id, campaign_id, today)
-        hourly_key = CacheKeys.freq_hourly(user_id, campaign_id, hour)
-
-        pipe = redis_client.pipeline()
-        pipe.incr(daily_key)
-        pipe.expire(daily_key, 24 * 3600)
-        pipe.incr(hourly_key)
-        pipe.expire(hourly_key, 3600)
-        await pipe.execute()
-
     # ------------------------------------------------------------------
     # Ad request / opportunity tracking (called from router layer)
     # ------------------------------------------------------------------
